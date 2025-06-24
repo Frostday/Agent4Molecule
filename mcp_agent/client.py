@@ -16,7 +16,7 @@ class MCPClient:
         self.exit_stack = AsyncExitStack()
         self._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.llm_agent_name = "gemini"
-        self.model_version = "gemini-2.0-flash"
+        self.model_version = "gemini-1.5-flash"
 
 
     async def connect_to_server(self, server_script_path: str):
@@ -82,8 +82,17 @@ class MCPClient:
                 for tool in response.tools
             ]
 
+        # response = self._client.models.generate_content(
+        # model="gemini-2.0-flash", contents= messages[0]['content'],  
+        # config= GenerateContentConfig(
+        #     tools=available_tools
+
+        # ),)
         response = self._client.models.generate_content(
-        model="gemini-2.0-flash", contents= messages[0]['content'],  
+        model="gemini-2.0-flash", contents=  genai.types.Content(
+  role='user',
+  parts=[genai.types.Part.from_text(text=query)]
+),  
         config= GenerateContentConfig(
             tools=available_tools
 
