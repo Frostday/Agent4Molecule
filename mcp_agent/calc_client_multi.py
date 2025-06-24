@@ -57,8 +57,8 @@ class MCPClient:
         for tool in response.tools:
             print(f"\nTool Name: {tool.name}")
             print(f"Description: {tool.description}")
-    
-
+            print("Input Schema:")
+            print(tool.inputSchema)
 
         tools = response.tools
 
@@ -79,13 +79,15 @@ class MCPClient:
         messages = [
            genai.types.Content(
   role='user',
-  parts=[genai.types.Part.from_text(text=f"""You are an assistant that aids in executing drug discovery pipelines.
+  parts=[genai.types.Part.from_text(text=f"""You are an assistant that solves math problems.
 
-A user will ask you to run a certain pipeline, or parts of pipelines, and provide you the appropriate input files and parameters. 
-Based on what the user requests, determin the right sequence of tools to run, and if necessary, use the output from one tool as the input for the next one.                            
-If the user provides values for parameters, use those instead of the default ones.
+You may need to first extract numbers and the type of math operation from a paragraph using a tool,
+then call a math function (add, subtract, etc.) to solve it.
 
-User request: {query}
+If the user asks a direct arithmetic question like '5 - 3', use the appropriate math tool directly.
+If the user gives a paragraph like 'I had 10 candies and ate 4', extract the operation and numbers using the parsing tool.
+
+Now solve this: {query}
 """)]
 )
         ]
@@ -141,7 +143,7 @@ User request: {query}
 
                 if not part.function_call: break
             # Add assistant message to history
-               
+                print("down here")
                 messages.append({'role': 'model', 'parts' : [{
       "functionCall": {
         "name": part.function_call.name,
@@ -149,7 +151,7 @@ User request: {query}
       }
     }]})
             
-            
+            print(tool_calls)
             if not tool_calls[0].function_call: break
 
 
@@ -160,7 +162,7 @@ User request: {query}
             ans = None
             function_responses = []
             for tool_call in tool_calls:
-           
+                print('t', tool_call)
                 tool_name = tool_call.function_call.name
                 tool_args = tool_call.function_call.args
                 tool_use_id = tool_call.function_call.id
@@ -168,14 +170,11 @@ User request: {query}
 
                 print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
                 tool_result = await self.session.call_tool(tool_name, tool_args)
-            
-                
 
                 messages.append({'role':'function','parts':[{'functionResponse': {'name':tool_name, 'response': {'output': tool_result.content[0].text}}}]})
-                if tool_result: 
-                    ans = tool_result.content[0].text
+                ans = tool_result.content[0].text
 
-          
+            for m in messages:print(m)
 
         return ans        
         return "\n".join(final_response_parts)
