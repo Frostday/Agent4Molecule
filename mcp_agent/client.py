@@ -86,8 +86,8 @@ class MCPClient:
         ]
 
         final_response_parts = []
-
         while True:
+            # print("Current messages", messages)
             response = self._client.models.generate_content(
                 model=self.llm,
                 contents=messages,
@@ -107,20 +107,18 @@ class MCPClient:
                     tool_calls.append(part)
                 if not part.function_call:
                     break
-            
-            #  Add assistant message to history
-            messages.append(
-                {
-                    'role': 'model', 
-                    'parts' : [{
-                        "functionCall": {
-                            "name": part.function_call.name,
-                            "args": part.function_call.args
-                        }
-                    }]
-                }
-            )
-            
+                #  Add assistant message to history
+                messages.append(
+                    {
+                        'role': 'model', 
+                        'parts' : [{
+                            "functionCall": {
+                                "name": part.function_call.name,
+                                "args": part.function_call.args
+                            }
+                        }]
+                    }
+                )
             if not tool_calls[0].function_call:
                 break
 
@@ -146,10 +144,10 @@ class MCPClient:
                         ]
                     }
                 )
-                if tool_result: 
+                if tool_result:
                     ans = tool_result.content[0].text
-        return ans        
-        return "\n".join(final_response_parts)
+
+        return ans
 
     async def chat_loop(self):
         """Run an interactive chat loop"""

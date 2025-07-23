@@ -13,14 +13,16 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("enzygen")
 
 @mcp.tool()
-def get_motif_sequence(enzyme_family: Annotated[str, Field(description="Enzyme family name")],
-                       motif_seq: Annotated[str, Field(description="Sequence of the motif")],
-                       motif_coord: Annotated[list[int], Field(description="Coordinates of the motif")],
-                       motif_indices: Annotated[list[int], Field(description="Indices of the motif")],
-                       motif_pdb: Annotated[str, Field(description="PDB file of the motif")],
-                       motif_ec4: Annotated[str, Field(description="EC4 file of the motif")],
-                       motif_substrate: Annotated[str, Field(description="Substrate file of the motif")],
-                       recommended_length: Annotated[int, Field(description="Recommended length of the motif")]):
+def build_enzygen_input(
+    enzyme_family: Annotated[str, Field(description="Enzyme family name")],
+    motif_seq: Annotated[str, Field(description="Sequence of the motif")],
+    motif_coord: Annotated[list[int], Field(description="Coordinates of the motif")],
+    motif_indices: Annotated[list[int], Field(description="Indices of the motif")],
+    motif_pdb: Annotated[str, Field(description="PDB file of the motif")],
+    motif_ec4: Annotated[str, Field(description="EC4 file of the motif")],
+    motif_substrate: Annotated[str, Field(description="Substrate file of the motif")],
+    recommended_length: Annotated[int, Field(description="Recommended length of the motif")]
+) -> str:
     file_name = ENZYGEN_PATH+"/data/input.json"
     data = {}
     indices, pdb, ec4, substrate = ",".join([str(i) for i in motif_indices])+"\n", motif_pdb, motif_ec4, motif_substrate
