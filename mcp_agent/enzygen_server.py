@@ -5,6 +5,8 @@ import json
 import subprocess
 import time
 
+from run_utils import extract_job_id
+
 ENZYGEN_PATH = "/ocean/projects/cis240137p/dgarg2/github/EnzyGen/"
 ENZYGEN_CONDA_ENV = "/ocean/projects/cis240137p/dgarg2/miniconda3/envs/enzygen/bin/python"
 import sys
@@ -13,15 +15,6 @@ sys.path.append(ENZYGEN_PATH)
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("enzygen")
-
-
-def extract_job_id(output: str) -> str:
-    """Extracts the job ID from the output of the sbatch command."""
-    lines = output.split('\n')
-    for line in lines:
-        if "Submitted batch job" in line:
-            return line.split()[-1]
-    return ""
 
 
 @mcp.tool()
@@ -35,7 +28,7 @@ def build_enzygen_input(
     motif_substrate: Annotated[str, Field(description="Substrate file of the motif")],
     recommended_length: Annotated[int, Field(description="Recommended length of the motif")]
 ) -> str:
-    file_name = ENZYGEN_PATH+"/data/input.json"
+    file_name = os.path.join(ENZYGEN_PATH, "data/input.json")
     data = {}
     indices, pdb, ec4, substrate = ",".join([str(i) for i in motif_indices])+"\n", motif_pdb, motif_ec4, motif_substrate
     seq, coord = "", ""
@@ -72,8 +65,8 @@ def run_enzygen(input_json: Annotated[str, Field(description="Location of script
         input_data = json.load(f)
     enzymes_families = input_data.keys()
     text = f"""#!/bin/bash\n\nrm -rf outputs/*\n\ndata_path={input_json}\n\noutput_path=models\nproteins=({" ".join(enzymes_families)})\n\nfor element in ${{proteins[@]}}\ndo\ngeneration_path={ENZYGEN_PATH}/outputs/${{element}}\n\nmkdir -p ${{generation_path}}\nmkdir -p ${{generation_path}}/pred_pdbs\nmkdir -p ${{generation_path}}/tgt_pdbs\n\n{ENZYGEN_CONDA_ENV} fairseq_cli/validate.py ${{data_path}} --task geometric_protein_design --protein-task ${{element}} --dataset-impl-source "raw" --dataset-impl-target "coor" --path ${{output_path}}/checkpoint_best.pt --batch-size 1 --results-path ${{generation_path}} --skip-invalid-size-inputs-valid-test --valid-subset test --eval-aa-recovery\ndone"""
-    run_file = ENZYGEN_PATH+"/run_enzygen.sh"
-    slurm_file = ENZYGEN_PATH+"/run_gpu_slurm.sh"
+    run_file = os.path.join(ENZYGEN_PATH, "run_enzygen.sh")
+    slurm_file = os.path.join(ENZYGEN_PATH, "run_gpu_slurm.sh")
     with open(run_file, "w") as f:
         f.write(text)
     with open(slurm_file, "w") as f:
@@ -104,7 +97,7 @@ def run_enzygen(input_json: Annotated[str, Field(description="Location of script
         logs = f.read()
     with open(f"{ENZYGEN_PATH}/output.err", "r") as f:
         errors = f.read()
-    return "Predicted structure(s) from EnzyGen:\n\n" + "\n----------\n".join(output_preds) + "\n----------\n" + "Log File:\n\n" + logs + "\n----------\n" + "Error File:\n\n" + errors
+    return "Predicted structure(s) from EnzyGen:\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "Error File:\n\n----------\n" + errors
 
 
 def cleanup():
