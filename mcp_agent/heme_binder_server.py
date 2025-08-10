@@ -5,6 +5,8 @@ from pydantic import Field
 import json
 import subprocess
 import time
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from run_utils import extract_job_id, RF_DIFFUSION_CONFIG
 
@@ -48,6 +50,7 @@ def run_rf_diffusion(
     ligand: Annotated[str, Field(description="Ligand name")],
     N_designs: Annotated[int, Field(description="Number of designs to generate")] = 5,
     T_steps: Annotated[int, Field(description="Number of diffusion steps")] = 200,
+    job_time: Annotated[str, Field(description="Time limit for diffusion jobs (estimated time is 3.5 * T_steps * N_design seconds)")] = "1:00:00"
 ) -> str:
     DIFFUSION_DIR = f"{WDIR}/0_diffusion"
     if not os.path.exists(DIFFUSION_DIR):
@@ -87,7 +90,7 @@ def run_rf_diffusion(
         # gres="v100-32:1",
         # mem="8g", 
         N_cores=2, 
-        time="1:00:00", 
+        time=job_time, 
         array=len(commands_diffusion), 
         array_commandfile=cmds_filename
     )
@@ -108,35 +111,170 @@ def run_rf_diffusion(
 
     output_preds = []
     rfa_logs = []
+    diffusion_output_files = []
     with open(os.path.join(DIFFUSION_DIR, "output.log"), "r") as f:
         logs = f.read()
     with open(os.path.join(DIFFUSION_DIR, "output.err"), "r") as f:
         errors = f.read()
     for rundir in diffusion_rundirs:
         diffusion_outputs = glob.glob(f"{rundir}/out/*.pdb")
+        diffusion_output_files += diffusion_outputs
         for out in diffusion_outputs:
             with open(out, "r") as f:
                 output_preds.append(f"File: {os.path.join(DIFFUSION_DIR, out)}\n\n" + f.read())
         with open(os.path.join(rundir, "output.log"), "r") as f:
             rfa_logs.append(f"File: {os.path.join(DIFFUSION_DIR, rundir, 'output.log')}\n\n" + f.read())
             
-    return "Predicted structure(s) from RFDiffusionAA:\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors
+    return f"Predicted structure(s) from RFDiffusionAA:\n\nAll Diffusion Output Files: {diffusion_output_files}\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors
 
 
 @mcp.tool()
-def rf_diffusion_analysis() -> str:
-    return
+def analyze_rf_diffusion_outputs(
+    diffusion_outputs: Annotated[list[str], Field(description="List of diffusion output files")],
+    ref_pdb: Annotated[str, Field(description="Reference PDB file (same as input PDB file)")],
+    params: Annotated[list[str], Field(description="Rosetta params file(s)")],
+    term_limit: Annotated[float, Field(description="Terminal residue limit")] = None,
+    SASA_limit: Annotated[float, Field(description="Solvent accessible surface area limit")] = None,
+    loop_limit: Annotated[float, Field(description="Maximum fraction of backbone that can be in loop conformation")] = None,
+    longest_helix: Annotated[int, Field(description="Maximum length of helices")] = None,
+    rog: Annotated[float, Field(description="Radius of gyration limit for protein compactness")] = None,
+    ref_catres: Annotated[str, Field(description="Position of CYS in diffusion input")] = None,
+    exclude_clash_atoms: Annotated[str, Field(description="Ligand atoms excluded from clashchecking because they are flexible")] = None,
+    ligand_exposed_atoms: Annotated[str, Field(description="Ligand atoms that need to be more exposed")] = None,
+    exposed_atom_SASA: Annotated[float, Field(description="Minimum absolute SASA for exposed ligand atoms")] = None,
+    job_time: Annotated[str, Field(description="Time limit for diffusion jobs")] = "1:00:00"
+) -> str:
+    DIFFUSION_DIR = f"{WDIR}/0_diffusion"
+    analysis_script = f"{SCRIPT_DIR}/scripts/diffusion_analysis/process_diffusion_outputs.py"
+    os.chdir(DIFFUSION_DIR)
+
+    os.system(f"rm -rf {DIFFUSION_DIR}/filtered_structures/*")
+
+    dif_analysis_cmd_dict = {
+        "--pdb": " ".join(diffusion_outputs),
+        "--ref": ref_pdb,
+        "--params": " ".join(params),
+        "--rethread": True,
+        "--fix": True,
+        "--partial": None,
+        "--outdir": None,
+        "--traj": "5/30",
+        "--trb": None,
+        "--analyze": False,
+    }
+    
+    # Add optional parameters only if they are not None
+    if term_limit is not None:
+        dif_analysis_cmd_dict["--term_limit"] = str(term_limit)
+    if SASA_limit is not None:
+        dif_analysis_cmd_dict["--SASA_limit"] = str(SASA_limit)
+    if loop_limit is not None:
+        dif_analysis_cmd_dict["--loop_limit"] = str(loop_limit)
+    if ref_catres is not None:
+        dif_analysis_cmd_dict["--ref_catres"] = ref_catres
+    if exclude_clash_atoms is not None:
+        dif_analysis_cmd_dict["--exclude_clash_atoms"] = exclude_clash_atoms
+    if ligand_exposed_atoms is not None:
+        dif_analysis_cmd_dict["--ligand_exposed_atoms"] = ligand_exposed_atoms
+    if exposed_atom_SASA is not None:
+        dif_analysis_cmd_dict["--exposed_atom_SASA"] = str(exposed_atom_SASA)
+    if longest_helix is not None:
+        dif_analysis_cmd_dict["--longest_helix"] = str(longest_helix)
+    if rog is not None:
+        dif_analysis_cmd_dict["--rog"] = str(rog)
+
+    analysis_command = f"{PYTHON['general']} {analysis_script}"
+    for k, val in dif_analysis_cmd_dict.items():
+        if val is not None:
+            if isinstance(val, list):
+                analysis_command += f" {k}"
+                analysis_command += " " + " ".join(val)
+            elif isinstance(val, bool):
+                if val == True:
+                    analysis_command += f" {k}"
+            else:
+                analysis_command += f" {k} {val}"
+    # print(f"Analysis command: {analysis_command}")
+
+    submit_script = "submit_diffusion_analysis.sh"
+    utils.create_slurm_submit_script(
+        filename=submit_script, 
+        N_cores="2", 
+        time=job_time, 
+        command=analysis_command, 
+        outfile_name="output_analysis"
+    )
+    p = subprocess.Popen(['sbatch', submit_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    job_id = extract_job_id(output.decode('utf-8'))
+    print("Heme Binder RFDiffusion Analysis Job ID:", job_id)
+    while True:
+        p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (output, err) = p.communicate()
+        if job_id not in str(output):
+            break
+        print("Job still running...")
+        time.sleep(60)
+
+    with open(os.path.join(DIFFUSION_DIR, "output_analysis.log"), "r") as f:
+        logs = f.read()
+    with open(os.path.join(DIFFUSION_DIR, "output_analysis.err"), "r") as f:
+        errors = f.read()
+
+    diffused_backbones_good = glob.glob(f"{DIFFUSION_DIR}/filtered_structures/*.pdb")
+    dif_analysis_df = pd.read_csv(f"{DIFFUSION_DIR}/diffusion_analysis.sc", header=0, sep=r"\s+")
+    # print(dif_analysis_df)
+
+    plt.figure(figsize=(12, 12))
+    for i,k in enumerate(dif_analysis_df.keys()):
+        if k in ["description"]:
+            continue
+        plt.subplot(4, 3, i+1)
+        plt.hist(dif_analysis_df[k])
+        plt.title(k)
+        plt.xlabel(k)
+    plt.tight_layout()
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
+    os.makedirs(output_dir, exist_ok=True)
+    img_path = os.path.join(output_dir, "outputs_0_analyze.png")
+    plt.savefig(img_path)
+    plt.close()
+
+    return f"Number of good structures: {len(diffused_backbones_good)}\nGood structures: {diffused_backbones_good}\n\nDistribution plot path: {img_path}\n\nAnalysis CSV:\n\n----------\n" + dif_analysis_df.to_csv(index=False) + "\n----------\n\n Log File:\n\n----------\n" + logs + "\n----------\n\n Error File:\n\n----------\n" + errors
 
 
 def cleanup():
-    os.system(f"rm -f /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/output.txt")
+    os.system(f"rm -rf /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/*")
     os.system(f"rm -rf {WDIR}/*")
 
 
 if __name__ == "__main__":
     # mcp.run(transport='stdio')
-    cleanup()
-    # output = run_rf_diffusion(input_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", ligand="HBA", N_designs=2, T_steps=200)
-    # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/output.txt", "w") as f:
-    #     f.write(output)
 
+    # cleanup()
+
+    # output = run_rf_diffusion(
+    #     input_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", 
+    #     ligand="HBA", 
+    #     N_designs=5, 
+    #     T_steps=200
+    # )
+    # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_0.txt", "w") as f:
+    #     f.write(output)
+    
+    output = analyze_rf_diffusion_outputs(
+        diffusion_outputs=['7o2g_HBA/out/7o2g_HBA_dif_0.pdb', '7o2g_HBA/out/7o2g_HBA_dif_1.pdb', '7o2g_HBA/out/7o2g_HBA_dif_2.pdb', '7o2g_HBA/out/7o2g_HBA_dif_3.pdb', '7o2g_HBA/out/7o2g_HBA_dif_4.pdb'], 
+        ref_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", 
+        params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
+        term_limit=15.0,
+        SASA_limit=0.3,
+        loop_limit=0.4,
+        longest_helix=30,
+        rog=30.0,
+        ref_catres="A15",
+        exclude_clash_atoms="O1 O2 O3 O4 C5 C10",
+        ligand_exposed_atoms="C45 C46 C47",
+        exposed_atom_SASA=10.0
+    )
+    with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_0_analyze.txt", "w") as f:
+        f.write(output)
