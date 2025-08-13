@@ -199,7 +199,7 @@ def analyze_rf_diffusion_outputs(
     submit_script = "submit_diffusion_analysis.sh"
     utils.create_slurm_submit_script(
         filename=submit_script, 
-        N_cores="2", 
+        N_cores=2, 
         time=job_time, 
         command=analysis_command, 
         outfile_name="output_analysis"
@@ -240,7 +240,85 @@ def analyze_rf_diffusion_outputs(
     plt.savefig(img_path)
     plt.close()
 
-    return f"Number of good structures: {len(diffused_backbones_good)}\nGood structures: {diffused_backbones_good}\n\nDistribution plot path: {img_path}\n\nAnalysis CSV:\n\n----------\n" + dif_analysis_df.to_csv(index=False) + "\n----------\n\n Log File:\n\n----------\n" + logs + "\n----------\n\n Error File:\n\n----------\n" + errors
+    return f"Number of good structures: {len(diffused_backbones_good)}\nGood structures: {diffused_backbones_good}\n\nDistribution plot path: {img_path}\n\nAnalysis CSV:\n\n----------\n" + dif_analysis_df.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
+
+
+@mcp.tool()
+def run_protein_mpnn(
+    diffused_backbones_path: Annotated[str, Field(description="Path to diffused backbone PDBs")] = f"{WDIR}/0_diffusion/filtered_structures/",
+    MPNN_temperatures: Annotated[list, Field(description="List of temperatures for ProteinMPNN")] = [0.1, 0.2, 0.3],
+    MPNN_outputs_per_temperature: Annotated[int, Field(description="Number of outputs per temperature")] = 5,
+    MPNN_omit_AAs: Annotated[str, Field(description="Amino acids to omit")] = "CM",
+    job_time: Annotated[str, Field(description="Time limit for ProteinMPNN jobs")] = "1:00:00"
+):
+    MPNN_DIR = f"{WDIR}/1_proteinmpnn"
+    diffused_backbones_good = glob.glob(f"{diffused_backbones_path}/*.pdb")
+    assert len(diffused_backbones_good) > 0, "No good backbones found!"
+    os.makedirs(MPNN_DIR, exist_ok=True)
+    os.chdir(MPNN_DIR)
+
+    mask_json_cmd = f"{PYTHON['general']} {SCRIPT_DIR}/scripts/design/make_maskdict_from_trb.py --out masked_pos.jsonl --trb"
+    for d in diffused_backbones_good:
+        mask_json_cmd += " " + d.replace(".pdb", ".trb")
+    p = subprocess.Popen(mask_json_cmd, shell=True)
+    (output, err) = p.communicate()
+    assert os.path.exists("masked_pos.jsonl"), "Failed to create masked positions JSONL file"
+
+    commands_mpnn = []
+    cmds_filename_mpnn = "commands_mpnn"
+    with open(cmds_filename_mpnn, "w") as file:
+        for T in MPNN_temperatures:
+            for f in diffused_backbones_good:
+                commands_mpnn.append(f"{PYTHON['proteinMPNN']} {proteinMPNN_script} "
+                                    f"--model_type protein_mpnn --ligand_mpnn_use_atom_context 0 "
+                                    "--fixed_residues_multi masked_pos.jsonl --out_folder ./ "
+                                    f"--number_of_batches {MPNN_outputs_per_temperature} --temperature {T} "
+                                    f"--omit_AA {MPNN_omit_AAs} --pdb_path {f} "
+                                    f"--checkpoint_protein_mpnn {SCRIPT_DIR}/lib/LigandMPNN/model_params/proteinmpnn_v_48_020.pt\n")
+                file.write(commands_mpnn[-1])
+    # print("Example MPNN command:", commands_mpnn[-1])
+
+    submit_script = "submit_mpnn.sh"
+    utils.create_slurm_submit_script(
+        filename=submit_script,
+        N_cores=2,
+        time=job_time,
+        array=len(commands_mpnn),
+        array_commandfile=cmds_filename_mpnn,
+        group=10
+    )
+    p = subprocess.Popen(['sbatch', submit_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    job_id = extract_job_id(output.decode('utf-8'))
+    print("Heme Binder ProteinMPNN Job ID:", job_id)
+    while True:
+        p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (output, err) = p.communicate()
+        if job_id not in str(output):
+            break
+        print("Job still running...")
+        time.sleep(60)
+
+    with open(os.path.join(MPNN_DIR, "output.log"), "r") as f:
+        logs = f.read()
+    with open(os.path.join(MPNN_DIR, "output.err"), "r") as f:
+        errors = f.read()
+    sequences = []
+    for s in glob.glob(f"{MPNN_DIR}/seqs/*.fa"):
+        with open(s, "r") as f:
+            seq = f.read()
+        sequences.append(f"File: {s}\n\n" + seq)
+    backbones = []
+    for b in glob.glob(f"{MPNN_DIR}/backbones/*.pdb"):
+        with open(b, "r") as f:
+            pdb = f.read()
+        backbones.append(f"File: {b}\n\n" + pdb)
+    
+    return f"Predicted structure(s) from ProteinMPNN:\n\nSequences:\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nBackbones:\n\n----------\n" + "\n----------\n----------\n".join(backbones) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
+
+
+def run_af2():
+    return
 
 
 def cleanup():
@@ -262,19 +340,33 @@ if __name__ == "__main__":
     # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_0.txt", "w") as f:
     #     f.write(output)
     
-    output = analyze_rf_diffusion_outputs(
-        diffusion_outputs=['7o2g_HBA/out/7o2g_HBA_dif_0.pdb', '7o2g_HBA/out/7o2g_HBA_dif_1.pdb', '7o2g_HBA/out/7o2g_HBA_dif_2.pdb', '7o2g_HBA/out/7o2g_HBA_dif_3.pdb', '7o2g_HBA/out/7o2g_HBA_dif_4.pdb'], 
-        ref_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", 
-        params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
-        term_limit=15.0,
-        SASA_limit=0.3,
-        loop_limit=0.4,
-        longest_helix=30,
-        rog=30.0,
-        ref_catres="A15",
-        exclude_clash_atoms="O1 O2 O3 O4 C5 C10",
-        ligand_exposed_atoms="C45 C46 C47",
-        exposed_atom_SASA=10.0
-    )
-    with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_0_analyze.txt", "w") as f:
+    # output = analyze_rf_diffusion_outputs(
+    #     diffusion_outputs=['7o2g_HBA/out/7o2g_HBA_dif_0.pdb', '7o2g_HBA/out/7o2g_HBA_dif_1.pdb', '7o2g_HBA/out/7o2g_HBA_dif_2.pdb', '7o2g_HBA/out/7o2g_HBA_dif_3.pdb', '7o2g_HBA/out/7o2g_HBA_dif_4.pdb'], 
+    #     ref_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", 
+    #     params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
+    #     term_limit=15.0,
+    #     SASA_limit=0.3,
+    #     loop_limit=0.4,
+    #     longest_helix=30,
+    #     rog=30.0,
+    #     ref_catres="A15",
+    #     exclude_clash_atoms="O1 O2 O3 O4 C5 C10",
+    #     ligand_exposed_atoms="C45 C46 C47",
+    #     exposed_atom_SASA=10.0
+    # )
+    # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_0_analyze.txt", "w") as f:
+    #     f.write(output)
+
+    # output = run_protein_mpnn(
+    #     diffused_backbones_path=f"{WDIR}/0_diffusion/filtered_structures/",
+    #     MPNN_temperatures=[0.1, 0.2, 0.3],
+    #     MPNN_outputs_per_temperature=5,
+    #     MPNN_omit_AAs="CM",
+    #     job_time="1:00:00"
+    # )
+    # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_1.txt", "w") as f:
+    #     f.write(output)
+
+    output = run_af2()
+    with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_2.txt", "w") as f:
         f.write(output)
