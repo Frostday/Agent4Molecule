@@ -36,7 +36,6 @@ PYTHON = {
 }
 if not os.path.exists(WDIR):
     os.makedirs(WDIR, exist_ok=True)
-USE_GPU_for_AF2 = True
 
 # INPUTS
 # params = [f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"]
@@ -86,9 +85,6 @@ def run_rf_diffusion(
     submit_script = "submit_diffusion.sh"
     utils.create_slurm_submit_script(
         filename=submit_script, 
-        # gpu=True, 
-        # gres="v100-32:1",
-        # mem="8g", 
         N_cores=2, 
         time=job_time, 
         array=len(commands_diffusion), 
@@ -125,7 +121,7 @@ def run_rf_diffusion(
         with open(os.path.join(rundir, "output.log"), "r") as f:
             rfa_logs.append(f"File: {os.path.join(DIFFUSION_DIR, rundir, 'output.log')}\n\n" + f.read())
             
-    return f"Predicted structure(s) from RFDiffusionAA:\n\nAll Diffusion Output Files: {diffusion_output_files}\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors
+    return f"Predicted backbone structure(s) from RFDiffusionAA:\n\nAll Output Files: {diffusion_output_files}\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors
 
 
 @mcp.tool()
@@ -240,19 +236,18 @@ def analyze_rf_diffusion_outputs(
     plt.savefig(img_path)
     plt.close()
 
-    return f"Number of good structures: {len(diffused_backbones_good)}\nGood structures: {diffused_backbones_good}\n\nDistribution plot path: {img_path}\n\nAnalysis CSV:\n\n----------\n" + dif_analysis_df.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
+    return f"Number of good backbone structure(s): {len(diffused_backbones_good)}\nGood backbone structure(s) files: {diffused_backbones_good}\n\nDistribution plot path: {img_path}\n\nAnalysis CSV:\n\n----------\n" + dif_analysis_df.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
 
 
 @mcp.tool()
 def run_protein_mpnn(
-    diffused_backbones_path: Annotated[str, Field(description="Path to diffused backbone PDBs")] = f"{WDIR}/0_diffusion/filtered_structures/",
+    diffused_backbones_good: Annotated[list[str], Field(description="List of good diffused backbone PDBs")],
     MPNN_temperatures: Annotated[list, Field(description="List of temperatures for ProteinMPNN")] = [0.1, 0.2, 0.3],
     MPNN_outputs_per_temperature: Annotated[int, Field(description="Number of outputs per temperature")] = 5,
     MPNN_omit_AAs: Annotated[str, Field(description="Amino acids to omit")] = "CM",
     job_time: Annotated[str, Field(description="Time limit for ProteinMPNN jobs")] = "1:00:00"
 ):
     MPNN_DIR = f"{WDIR}/1_proteinmpnn"
-    diffused_backbones_good = glob.glob(f"{diffused_backbones_path}/*.pdb")
     assert len(diffused_backbones_good) > 0, "No good backbones found!"
     os.makedirs(MPNN_DIR, exist_ok=True)
     os.chdir(MPNN_DIR)
@@ -313,17 +308,99 @@ def run_protein_mpnn(
         with open(b, "r") as f:
             pdb = f.read()
         backbones.append(f"File: {b}\n\n" + pdb)
+    protein_seq_fasta_files = glob.glob(f"{MPNN_DIR}/seqs/*.fa")
     
-    return f"Predicted structure(s) from ProteinMPNN:\n\nSequences:\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nBackbones:\n\n----------\n" + "\n----------\n----------\n".join(backbones) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
+    # return f"Predicted structure(s) from ProteinMPNN:\n\nAll Output Files: {protein_seq_fasta_files}\n\nSequences:\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nBackbones:\n\n----------\n" + "\n----------\n----------\n".join(backbones) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
+    return f"Predicted sequence(s) from ProteinMPNN:\n\nAll Output Files: {protein_seq_fasta_files}\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
 
 
-def run_af2():
+def run_af2(
+    protein_seq_fasta_files: Annotated[list[str], Field(description="Protein sequence fasta files (ProteinMPNN outputs)")],
+    AF2_recycles: Annotated[int, Field(description="Number of AF2 recycling steps")] = 3,
+    AF2_models: Annotated[str, Field(description="Number of AF2 models (default is '4', add other models to this string if needed, i.e. '3 4 5')")] = "4",
+    job_time: Annotated[str, Field(description="Time limit for AF2 jobs")] = "1:00:00"
+):
+    AF2_DIR = f"{WDIR}/2_af2"
+    os.makedirs(AF2_DIR, exist_ok=True)
+    os.chdir(AF2_DIR)
+
+    # First collecting MPNN outputs and creating FASTA files for AF2 input
+    mpnn_fasta = utils.parse_fasta_files(protein_seq_fasta_files)
+    mpnn_fasta = {k: seq.strip() for k, seq in mpnn_fasta.items() if "model_path" not in k}
+    # Giving sequences unique names based on input PDB name, temperature, and sequence identifier
+    mpnn_fasta = {k.split(",")[0]+"_"+k.split(",")[2].replace(" T=", "T")+"_0_"+k.split(",")[1].replace(" id=", ""): seq for k, seq in mpnn_fasta.items()}
+    # print(f"A total on {len(mpnn_fasta)} sequences will be predicted.")
+
+    SEQUENCES_PER_AF2_JOB = 100
+    mpnn_fasta_split = utils.split_fasta_based_on_length(mpnn_fasta, SEQUENCES_PER_AF2_JOB, write_files=True)
+
+    commands_af2 = []
+    cmds_filename_af2 = "commands_af2"
+    with open(cmds_filename_af2, "w") as file:
+        for ff in glob.glob("*.fasta"):
+            commands_af2.append(f"{PYTHON['af2']} {AF2_script} "
+                                f"--af-nrecycles {AF2_recycles} --af-models {AF2_models} "
+                                f"--fasta {ff} --scorefile {ff.replace('.fasta', '.csv')}\n")
+            file.write(commands_af2[-1])
+    # print("Example AF2 command:", commands_af2[-1])
+
+    submit_script = "submit_af2.sh"
+    utils.create_slurm_submit_script(
+        filename=submit_script, 
+        N_cores=2, 
+        time=job_time, 
+        array=len(commands_af2),
+        array_commandfile=cmds_filename_af2
+    )
+    
+    with open(submit_script, "r") as f:
+        content = f.read()
+        content = content.split("\n")
+        content.insert(-2, "module load cuda/12.6")
+    with open(submit_script, "w") as f:
+        f.write("\n".join(content))
+
+    p = subprocess.Popen(['sbatch', submit_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    job_id = extract_job_id(output.decode('utf-8'))
+    print("Heme Binder AF2 Job ID:", job_id)
+    while True:
+        p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (output, err) = p.communicate()
+        if job_id not in str(output):
+            break
+        print("Job still running...")
+        time.sleep(60)
+
+    with open(os.path.join(AF2_DIR, "output.log"), "r") as f:
+        logs = f.read()
+    with open(os.path.join(AF2_DIR, "output.err"), "r") as f:
+        errors = f.read()
+    structures = []
+    for b in glob.glob(f"{AF2_DIR}/*.pdb"):
+        with open(b, "r") as f:
+            pdb = f.read()
+        structures.append(f"File: {b}\n\n" + pdb)
+    with open(glob.glob(f"{AF2_DIR}/*.fasta")[0], "r") as f:
+        input_sequences = f.read()
+    with open(glob.glob(f"{AF2_DIR}/*.csv")[0], "r") as f:
+        afs_scores_csv = f.read()
+    af2_out_files = glob.glob(f"{AF2_DIR}/*.pdb")
+    
+    # return f"Predicted structure(s) from AF2:\n\nAll Output Files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + "\n----------\n\nInput Sequences:\n\n----------\n" + input_sequences + "\n----------\n\nAF2 Scores CSV:\n\n----------\n" + afs_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
+    return f"Predicted structure(s) from AF2:\n\nAll Output Files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + "\n----------\n\nAF2 Scores CSV:\n\n----------\n" + afs_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors
+
+
+def analyze_af2_outputs():
     return
 
 
 def cleanup():
     os.system(f"rm -rf /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/*")
     os.system(f"rm -rf {WDIR}/*")
+    # os.system(f"rm -rf {WDIR}/0_diffusion/*")
+    # os.system(f"rm -rf {WDIR}/1_proteinmpnn/*")
+    # os.system(f"rm -rf {WDIR}/2_af2/*")
 
 
 if __name__ == "__main__":
@@ -341,7 +418,7 @@ if __name__ == "__main__":
     #     f.write(output)
     
     # output = analyze_rf_diffusion_outputs(
-    #     diffusion_outputs=['7o2g_HBA/out/7o2g_HBA_dif_0.pdb', '7o2g_HBA/out/7o2g_HBA_dif_1.pdb', '7o2g_HBA/out/7o2g_HBA_dif_2.pdb', '7o2g_HBA/out/7o2g_HBA_dif_3.pdb', '7o2g_HBA/out/7o2g_HBA_dif_4.pdb'], 
+    #     diffusion_outputs=glob.glob(f"{WDIR}/0_diffusion/7o2g_HBA/out/*.pdb"), 
     #     ref_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", 
     #     params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
     #     term_limit=15.0,
@@ -358,7 +435,7 @@ if __name__ == "__main__":
     #     f.write(output)
 
     # output = run_protein_mpnn(
-    #     diffused_backbones_path=f"{WDIR}/0_diffusion/filtered_structures/",
+    #     diffused_backbones_good=glob.glob(f"{WDIR}/0_diffusion/filtered_structures/*.pdb"),
     #     MPNN_temperatures=[0.1, 0.2, 0.3],
     #     MPNN_outputs_per_temperature=5,
     #     MPNN_omit_AAs="CM",
@@ -367,6 +444,15 @@ if __name__ == "__main__":
     # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_1.txt", "w") as f:
     #     f.write(output)
 
-    output = run_af2()
-    with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_2.txt", "w") as f:
+    # output = run_af2(
+    #     protein_seq_fasta_files=glob.glob(f"{WDIR}/1_proteinmpnn/seqs/*.fa"),
+    #     AF2_recycles=3,
+    #     AF2_models="4",
+    #     job_time="1:00:00"
+    # )
+    # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_2.txt", "w") as f:
+    #     f.write(output)
+
+    output = analyze_af2_outputs()
+    with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_2_analyze.txt", "w") as f:
         f.write(output)
