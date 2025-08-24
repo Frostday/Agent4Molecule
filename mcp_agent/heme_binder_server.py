@@ -38,11 +38,6 @@ PYTHON = {
 if not os.path.exists(WDIR):
     os.makedirs(WDIR, exist_ok=True)
 
-# INPUTS
-# params = [f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"]
-# LIGAND = "HBA"
-# diffusion_inputs = ['/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb']
-
 
 @mcp.tool()
 def run_rf_diffusion(
@@ -468,7 +463,7 @@ def analyze_af2_outputs(
     logs = open(os.path.join(AF2_DIR, "output_analysis.log"), "r").read()
     errors = open(os.path.join(AF2_DIR, "output_analysis.err"), "r").read()
 
-    scores_af2 = pd.read_csv("scores.sc", sep="\s+", header=0)
+    scores_af2 = pd.read_csv("scores.sc", sep=r"\s+", header=0)
 
     AF2_filters = {
         "lDDT": [lDDT, ">="],
@@ -582,20 +577,20 @@ def run_ligand_mpnn(
     for log_file in glob.glob(f"{DESIGN_DIR_ligMPNN}/logs/*.log"):
         with open(log_file, "r") as f:
             lig_mpnn_logs.append(f"File: {log_file}\n\n{f.read()}")
-    scores = pd.read_csv("scorefile.txt", sep="\s+", header=0)
+    scores = pd.read_csv("scorefile.txt", sep=r"\s+", header=0)
 
     return f"Ligand MPNN Designs Generated\n\nAll output files: {pdb_files}\nScores File: {os.path.join(DESIGN_DIR_ligMPNN, "scorefile.txt")}\n\n----------\n" + "\n----------\n----------\n".join(pdb_content) + "\n----------\n\nScores file:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nLigand MPNN Logs:\n\n----------\n" + "\n----------\n----------\n".join(lig_mpnn_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 def analyze_ligand_mpnn_outputs(
-    scores_files: Annotated[str, Field(description="Scores file path (most often it will be the scorefile.txt from Ligand MPNN)")],
+    scores_file: Annotated[str, Field(description="Scores file path (most often it will be the scorefile.txt from Ligand MPNN)")],
     filters: Annotated[dict[str, list], Field(description="Filtering criteria for ligand MPNN designs - based on the values in the scores file and minimum requirements (example: {\"all_cst\": [1.5, \"<=\"], \"L_SASA\": [0.20, \"<=\"], \"COO_hbond\": [1.0, \"=\"], \"cms_per_atom\": [5.0, \">=\"], \"corrected_ddg\": [-50.0, \"<=\"], \"nlr_totrms\": [0.8, \"<=\"], \"nlr_SR1_rms\": [0.6, \"<=\"]})")] = {},
 ):
     DESIGN_DIR_ligMPNN = f"{WDIR}/3.1_design_pocket_ligandMPNN"
     os.chdir(DESIGN_DIR_ligMPNN)
     os.system(f"rm -rf {DESIGN_DIR_ligMPNN}/good/*")
 
-    scores = pd.read_csv(scores_files, sep="\s+", header=0)
+    scores = pd.read_csv(scores_file, sep=r"\s+", header=0)
     filtered_scores = utils.filter_scores(scores, filters)
 
     plt.figure(figsize=(12, 9))
@@ -617,7 +612,7 @@ def analyze_ligand_mpnn_outputs(
     else:
         return "No good designs created, change the filtering criteria or rerun the previous jobs with better parameters\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n"
 
-    return f"Ligand MPNN Designs Filtered\n\nFinal Outputs:{glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_files}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
+    return f"Ligand MPNN Designs Filtered\n\nFinal Outputs:{glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
 
 
 def run_ligand_mpnn_redesign_2nd_layer_residues(
@@ -706,21 +701,125 @@ def run_ligand_mpnn_redesign_2nd_layer_residues(
     return f"Predicted sequence(s) from LigandMPNN:\n\nAll Output Files: {protein_seq_fasta_files}\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
 
 
-def run_fast_relax():
-    return ""
+def run_fast_relax(
+    input_pdbs: Annotated[list[str], Field(description="Paths to input PDB file(s) (from AF2 good models)")],
+    ref_pdb: Annotated[list[str], Field(description="Paths to reference PDB file(s) (from Ligand MPNN good pocket designs)")],
+    cstfile: Annotated[str, Field(description="Path to CST file")],
+    LIGAND: Annotated[str, Field(description="Ligand name")],
+    params: Annotated[list[str], Field(description="Rosetta params file(s) paths")],
+    NSTRUCT: Annotated[int, Field(description="Number of relax iteration on each input structure")] = 1,
+    job_time: Annotated[str, Field(description="Time limit for the job")] = "0:30:00"
+):
+    RELAX_DIR = f"{WDIR}/6.1_final_relax"
+    os.system(f"rm -rf {RELAX_DIR}/*")
+    os.makedirs(RELAX_DIR, exist_ok=True)
+    os.chdir(RELAX_DIR)
+    os.makedirs(RELAX_DIR+"/logs", exist_ok=True)
+
+    if len(input_pdbs) == 0:
+        return "No input PDB files to relax with"
+    
+    ref_and_model_pairs = []
+    for r in ref_pdb:
+        for pdbfile in input_pdbs:
+            if os.path.basename(r).replace(".pdb", "_") in pdbfile:
+                ref_and_model_pairs.append((r, pdbfile))
+
+    if len(ref_and_model_pairs) != len(input_pdbs): 
+        return "Was not able to match all models with reference structures"
+
+    commands_relax = []
+    cmds_filename_rlx = "commands_relax"
+    with open(cmds_filename_rlx, "w") as file:
+        for r_m in ref_and_model_pairs:
+            commands_relax.append(f"{PYTHON['general']} {SCRIPT_DIR}/scripts/design/align_add_ligand_relax.py "
+                                f"--outdir ./ --ligand {LIGAND} --ref_pdb {r_m[0]} "
+                                f"--pdb {r_m[1]} --nstruct {NSTRUCT} "
+                                f"--params {' '.join(params)} --cstfile {cstfile} > logs/{os.path.basename(r_m[1]).replace('.pdb', '.log')}\n")
+            file.write(commands_relax[-1])
+
+    submit_script = "submit_relax.sh"
+    utils.create_slurm_submit_script(
+        filename=submit_script, 
+        N_cores=2, 
+        time=job_time, 
+        array=len(commands_relax),
+        array_commandfile=cmds_filename_rlx
+    )
+
+    p = subprocess.Popen(['sbatch', submit_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    job_id = extract_job_id(output.decode('utf-8'))
+    print("Fast Relax Job ID:", job_id)
+    while True:
+        p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (output, err) = p.communicate()
+        if job_id not in str(output):
+            break
+        print("Job still running...")
+        time.sleep(60)
+
+    with open(os.path.join(RELAX_DIR, "output.log"), "r") as f:
+        logs = f.read()
+    with open(os.path.join(RELAX_DIR, "output.err"), "r") as f:
+        errors = f.read()
+    pdb_files = glob.glob(f"{RELAX_DIR}/*.pdb")
+    pdb_content = []
+    for pdb in pdb_files:
+        with open(pdb, "r") as f:
+            pdb_content.append(f"File: {pdb}\n\n{f.read()}")
+    relax_logs = []
+    for log_file in glob.glob(f"{RELAX_DIR}/logs/*.log"):
+        with open(log_file, "r") as f:
+            relax_logs.append(f"File: {log_file}\n\n{f.read()}")
+    scores = pd.read_csv("scorefile.txt", sep=r"\s+", header=0)
+
+    return f"Fast Relax Job Completed\n\nAll Output Files: {pdb_files}\nScores File: {os.path.join(RELAX_DIR, "scorefile.txt")}\n\nPDB Files:\n\n----------\n" + "\n----------\n----------\n".join(pdb_content) + "\n----------\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nFast Relax Logs:\n\n----------\n" + "\n----------\n----------\n".join(relax_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+
+
+def analyze_fast_relax_outputs(
+    scores_file: Annotated[str, Field(description="Scores file path (most often it will be the scorefile.txt from Fast Relax)")],
+    filters: Annotated[dict[str, list], Field(description="Filtering criteria for fast relax designs - based on the values in the scores file and minimum requirements (example: {\"all_cst\": [1.5, \"<=\"], \"L_SASA\": [0.20, \"<=\"], \"COO_hbond\": [1.0, \"=\"], \"cms_per_atom\": [5.0, \">=\"], \"corrected_ddg\": [-50.0, \"<=\"], \"nlr_totrms\": [0.8, \"<=\"], \"nlr_SR1_rms\": [0.6, \"<=\"]})")] = {},
+) -> str:
+    RELAX_DIR = f"{WDIR}/6.1_final_relax"
+    os.chdir(RELAX_DIR)
+    os.system("rm -rf good/*")
+
+    scores = pd.read_csv(scores_file, sep=r"\s+", header=0)
+    filtered_scores = utils.filter_scores(scores, filters)
+
+    plt.figure(figsize=(12, 9))
+    for i,k in enumerate(filters):
+        if k not in scores.keys():
+            continue
+        plt.subplot(4, 3, i+1)
+        plt.hist(scores[k])
+        plt.title(k)
+        plt.xlabel(k)
+    plt.tight_layout()
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
+    os.makedirs(output_dir, exist_ok=True)
+    img_path = os.path.join(output_dir, "outputs_6_analyze.png")
+    plt.savefig(img_path)
+    plt.close()
+
+    if len(filtered_scores) > 0:
+        os.makedirs(f"{RELAX_DIR}/good", exist_ok=True)
+        for idx, row in filtered_scores.iterrows():
+            copy2(row["description"]+".pdb", "good/"+row["description"]+".pdb")
+    else:
+        return "No good designs created, change the filtering criteria or rerun the previous jobs with better parameters\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n"
+    
+    return f"Fast Relax Designs Filtered\n\nFinal Outputs:{glob.glob(f"{RELAX_DIR}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
 
 
 def cleanup():
-    os.system(f"rm -rf /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/*")
+    # os.system(f"rm -rf /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/*")
     os.system(f"rm -rf {WDIR}/*")
-    # os.system(f"rm -rf {WDIR}/0_diffusion/*")
-    # os.system(f"rm -rf {WDIR}/1_proteinmpnn/*")
-    # os.system(f"rm -rf {WDIR}/2_af2/*")
-    # os.system(f"rm -rf {WDIR}/3.1_design_pocket_ligandMPNN/*")
 
 
 if __name__ == "__main__":
-    # mcp.run(transport='stdio')
+    mcp.run(transport='stdio')
 
     # cleanup()
 
@@ -791,7 +890,7 @@ if __name__ == "__main__":
     #     f.write(output)
 
     # output = analyze_ligand_mpnn_outputs(
-    #     scores_files=f"{WDIR}/3.1_design_pocket_ligandMPNN/scorefile.txt",
+    #     scores_file=f"{WDIR}/3.1_design_pocket_ligandMPNN/scorefile.txt",
     #     filters={
     #         # "all_cst": [1.5, "<="],
     #         "L_SASA": [0.2, "<="],
@@ -831,6 +930,27 @@ if __name__ == "__main__":
     # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_5_analyze.txt", "w") as f:
     #     f.write(output)
 
-    output = run_fast_relax()
-    with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_6.txt", "w") as f:
-        f.write(output)
+    # output = run_fast_relax(
+    #     input_pdbs=glob.glob(f"{WDIR}/5.1_2nd_af2/good/*.pdb"),
+    #     ref_pdb=glob.glob(f"{WDIR}/3.1_design_pocket_ligandMPNN/good/*.pdb"),
+    #     cstfile=f"{SCRIPT_DIR}/theozyme/HBA/HBA_CYS_UPO.cst",
+    #     LIGAND="HBA",
+    #     params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
+    # )
+    # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_6.txt", "w") as f:
+    #     f.write(output)
+
+    # output = analyze_fast_relax_outputs(
+    #     scores_file=f"{WDIR}/6.1_final_relax/scorefile.txt",
+    #     filters={
+    #         "all_cst": [1.5, "<="],
+    #         "L_SASA": [0.30, "<="],
+    #         # "COO_hbond": [1.0, "="],
+    #         "cms_per_atom": [3.0, ">="],
+    #         # "corrected_ddg": [-50.0, "<="],
+    #         "nlr_totrms": [0.8, "<="],
+    #         "nlr_SR1_rms": [0.6, "<="]
+    #     }
+    # )
+    # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_6_analyze.txt", "w") as f:
+    #     f.write(output)
