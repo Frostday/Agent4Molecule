@@ -15,6 +15,14 @@ from google.genai.types import Content, Part
 
 mcp = FastMCP("gromacs")
 
+def extract_job_id(output: str) -> str:
+    """Extracts the job ID from the output of the sbatch command."""
+    lines = output.split('\n')
+    for line in lines:
+        if "Submitted batch job" in line:
+            return line.split()[-1]
+    return ""
+
 
 @mcp.tool()
 def run_gromacs_copilot(
@@ -24,64 +32,100 @@ def run_gromacs_copilot(
     model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")],
     api_url: Annotated[str, Field(description="URL for LLM API")],
     mode: Annotated[str, Field(description="Copilot mode: copilot, agent, or debug")] = "agent"
-) -> str:
+    ) -> str:
+    """
+    Submits a SLURM job to run GROMACS Copilot and waits for completion.
+    """
+    slurm_script = os.path.join(workspace, "run_copilot.slurm")
+    log_file = os.path.join(workspace, "copilot_output.log")
+    err_file = os.path.join(workspace, "copilot_output.err")
 
-    cmd = [
-        "gmx_copilot",
-        "--workspace", workspace,
-        "--prompt", prompt,
-        "--api-key", api_key,
-        "--model", model,
-        "--url", api_url,
-        "--mode", mode
-    ]
+    cmd = f"gmx_copilot --workspace {workspace} --prompt \"{prompt}\" --api-key {api_key} --model {model} --url {api_url} --mode {mode}"
 
-    print(f"Running GROMACS Copilot with: {' '.join(cmd)}")
+    with open(slurm_script, "w") as f:
+    f.write(f"""#!/bin/bash
+    #SBATCH --job-name=gmx_copilot
+    #SBATCH --output={log_file}
+    #SBATCH --error={err_file}
+    #SBATCH --time=01:00:00
+    #SBATCH --partition=RM
+    #SBATCH --ntasks=1
+    #SBATCH --cpus-per-task=4
+    #SBATCH --mem=8G
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
 
-    if result.returncode != 0:
-        raise RuntimeError(f"GROMACS Copilot failed:\n{result.stderr}")
+    source ~/.bashrc
+    conda activate mcp-agent
+    {cmd}
+    """)
 
-    return result.stdout
 
+    p = subprocess.Popen(["sbatch", slurm_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, err = p.communicate()
+
+
+    if p.returncode != 0:
+    raise RuntimeError(f"Failed to submit SLURM job:\n{err.decode()}")
+
+
+    output_str = output.decode("utf-8")
+    print(output_str)
+    job_id = output_str.strip().split()[-1]
+
+
+    # Wait for job to complete
+    print(f"Submitted job {job_id}. Waiting for it to complete...")
+    while True:
+        q = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        qout, _ = q.communicate()
+        if job_id not in qout.decode("utf-8"):
+        break
+        print("Job still running...")
+        time.sleep(60)
+
+
+    # Collect and return outputs
+    with open(log_file, "r") as f:
+    logs = f.read()
+    with open(err_file, "r") as f:
+    errors = f.read()
+
+
+    return f"Job {job_id} completed.\n\nLog Output:\n{logs}\n\nErrors:\n{errors}"
 
 @mcp.tool()
 def visualize_latest_gromacs_output(
-    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")] = "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace"
-) -> str:
+    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")]
+    ) -> str:
     """
     Automatically finds the latest GROMACS Copilot output and visualizes it in PyMOL.
     """
     try:
-        import pymol2
+    import pymol2
     except ImportError:
-        raise RuntimeError("PyMOL2 library is not installed. Please install it with 'pip install pymol-open-source' or use your PyMOL installation.")
+    raise RuntimeError("PyMOL2 library is not installed. Please install it with 'pip install pymol-open-source' or use your PyMOL installation.")
+
 
     # Look for .gro and .xtc files in the workspace
     pdb_files = sorted(glob.glob(os.path.join(workspace, "*.gro")) + glob.glob(os.path.join(workspace, "*.pdb")), reverse=True)
     traj_files = sorted(glob.glob(os.path.join(workspace, "*.xtc")) + glob.glob(os.path.join(workspace, "*.trr")), reverse=True)
 
+
     if not pdb_files:
-        raise FileNotFoundError("No structure (.gro or .pdb) file found in the workspace.")
+    raise FileNotFoundError("No structure (.gro or .pdb) file found in the workspace.")
+
 
     pdb_file = pdb_files[0]
     trajectory_file = traj_files[0] if traj_files else None
 
+
     with pymol2.PyMOL() as pymol:
-        pymol.cmd.load(pdb_file, "protein")
-        if trajectory_file:
-            pymol.cmd.load_traj(trajectory_file, "protein")
-        pymol.cmd.show("cartoon", "protein")
-        pymol.cmd.color("cyan", "protein")
-        pymol.cmd.orient("protein")
+    pymol.cmd.load(pdb_file, "protein")
+    if trajectory_file:
+    pymol.cmd.load_traj(trajectory_file, "protein")
+    pymol.cmd.show("cartoon", "protein")
+    pymol.cmd.color("cyan", "protein")
+    pymol.cmd.orient("protein")
+
 
     return f"Visualization complete for {os.path.basename(pdb_file)}."
-
-def main():
-    # Start the MCP server with stdio transport
-    mcp.run(transport='stdio')
-
-
-if __name__ == "__main__":
-    main()
