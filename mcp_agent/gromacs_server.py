@@ -1,16 +1,13 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import re
+import seaborn as sns
 from mcp.server.fastmcp import FastMCP
-from typing import Any,Annotated,Optional
-import httpx
-import os,sys,glob
+from typing import Annotated
+import os,glob
 from pydantic import Field
-import utils,json
-from google import genai
-import getpass
 import subprocess
 import time
-import importlib
-from shutil import copy2
-from google.genai.types import Content, Part
 
 
 mcp = FastMCP("gromacs")
@@ -44,18 +41,16 @@ def run_gromacs_copilot(
 
     with open(slurm_script, "w") as f:
         f.write(f"""#!/bin/bash
+        #SBATCH -N 1
+        #SBATCH -p GPU-shared
+        #SBATCH -t 24:00:00
+        #SBATCH --gres=gpu:1
         #SBATCH --job-name=gmx_copilot
         #SBATCH --output={log_file}
         #SBATCH --error={err_file}
-        #SBATCH --time=01:00:00
-        #SBATCH --partition=RM
-        #SBATCH --ntasks=1
-        #SBATCH --cpus-per-task=4
-        #SBATCH --mem=8G
-
 
         source ~/.bashrc
-        conda activate mcp-agent
+        conda activate gromacs_env
         {cmd}
         """)
 
@@ -92,37 +87,60 @@ def run_gromacs_copilot(
 
 @mcp.tool()
 def visualize_latest_gromacs_output(
-    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")]
+    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")]= "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace"
     ) -> str:
     """
-    Automatically finds the latest GROMACS Copilot output and visualizes it in PyMOL.
+    Automatically finds the latest GROMACS Copilot output and visualizes it.
     """
-    try:
-        import pymol2
-    except ImportError:
-        raise RuntimeError("PyMOL2 library is not installed. Please install it with 'pip install pymol-open-source' or use your PyMOL installation.")
+    # Plot RMSD
+    rmsd_file = os.path.join(workspace, "analysis/rmsd.xvg")
+    if os.path.exists(rmsd_file):
+        data = []
+        with open(rmsd_file, "r") as file:
+            for line in file:
+                if line.startswith(("@", "#")):
+                    continue
+                parts = re.split(r'\s+', line.strip())
+                if len(parts) == 2:
+                    time_val, rmsd_val = map(float, parts)
+                    data.append((time_val, rmsd_val))
+        
+        df = pd.DataFrame(data, columns=["Time (ns)", "RMSD (nm)"])
+        plt.figure(figsize=(10, 5))
+        sns.lineplot(data=df, x="Time (ns)", y="RMSD (nm)", linewidth=2)
+        plt.title("RMSD of Protein Over Time")
+        plt.xlabel("Time (ns)")
+        plt.ylabel("RMSD (nm)")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(os.path.join(workspace, "rmsd_plot.png"))
+        plt.close()
 
 
-    # Look for .gro and .xtc files in the workspace
-    pdb_files = sorted(glob.glob(os.path.join(workspace, "*.gro")) + glob.glob(os.path.join(workspace, "*.pdb")), reverse=True)
-    traj_files = sorted(glob.glob(os.path.join(workspace, "*.xtc")) + glob.glob(os.path.join(workspace, "*.trr")), reverse=True)
-
-
-    if not pdb_files:
-        raise FileNotFoundError("No structure (.gro or .pdb) file found in the workspace.")
-
-
-    pdb_file = pdb_files[0]
-    trajectory_file = traj_files[0] if traj_files else None
-
-
-    with pymol2.PyMOL() as pymol:
-        pymol.cmd.load(pdb_file, "protein")
-    if trajectory_file:
-        pymol.cmd.load_traj(trajectory_file, "protein")
-    pymol.cmd.show("cartoon", "protein")
-    pymol.cmd.color("cyan", "protein")
-    pymol.cmd.orient("protein")
-
-
-    return f"Visualization complete for {os.path.basename(pdb_file)}."
+    # Plot RMSF
+    rmsf_file = os.path.join(workspace, "analysis/rmsf.xvg")
+    if os.path.exists(rmsf_file):
+        rmsf_data = []
+        with open(rmsf_file, "r") as file:
+            for line in file:
+                if line.startswith(("@", "#")):
+                    continue
+                parts = re.split(r'\s+', line.strip())
+                if len(parts) == 2:
+                    residue, rmsf_val = map(float, parts)
+                    rmsf_data.append((residue, rmsf_val))
+        
+        rmsf_df = pd.DataFrame(rmsf_data, columns=["Residue", "RMSF (nm)"])
+        plt.figure(figsize=(12, 5))
+        sns.lineplot(x='Residue', y='RMSF (nm)', data=rmsf_df, marker='o')
+        plt.title('RMSF per Residue')
+        plt.xlabel('Residue Number')
+        plt.ylabel('RMSF (nm)')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(os.path.join(workspace, "rmsf_plot.png"))
+        plt.close()
+    
+    # Find pdb file name
+    pdb_files = glob.glob(os.path.join(workspace, "*.pdb"))
+    return f"Visualization complete for {os.path.basename(pdb_files[0])}. RMSD and RMSF plots saved to workspace if available."
