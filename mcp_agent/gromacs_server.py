@@ -26,11 +26,11 @@ def extract_job_id(output: str) -> str:
 
 @mcp.tool()
 def run_gromacs_copilot(
-    workspace: Annotated[str, Field(description="Working directory for MD simulations")] = "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace",
     prompt: Annotated[str, Field(description="Natural language prompt to control GROMACS Copilot")],
     api_key: Annotated[str, Field(description="API key for LLM service")],
     model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")],
     api_url: Annotated[str, Field(description="URL for LLM API")],
+    workspace: Annotated[str, Field(description="Working directory for MD simulations")] = "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace",
     mode: Annotated[str, Field(description="Copilot mode: copilot, agent, or debug")] = "agent"
     ) -> str:
     """
@@ -43,30 +43,27 @@ def run_gromacs_copilot(
     cmd = f"gmx_copilot --workspace {workspace} --prompt \"{prompt}\" --api-key {api_key} --model {model} --url {api_url} --mode {mode}"
 
     with open(slurm_script, "w") as f:
-    f.write(f"""#!/bin/bash
-    #SBATCH --job-name=gmx_copilot
-    #SBATCH --output={log_file}
-    #SBATCH --error={err_file}
-    #SBATCH --time=01:00:00
-    #SBATCH --partition=RM
-    #SBATCH --ntasks=1
-    #SBATCH --cpus-per-task=4
-    #SBATCH --mem=8G
+        f.write(f"""#!/bin/bash
+        #SBATCH --job-name=gmx_copilot
+        #SBATCH --output={log_file}
+        #SBATCH --error={err_file}
+        #SBATCH --time=01:00:00
+        #SBATCH --partition=RM
+        #SBATCH --ntasks=1
+        #SBATCH --cpus-per-task=4
+        #SBATCH --mem=8G
 
 
-    source ~/.bashrc
-    conda activate mcp-agent
-    {cmd}
-    """)
-
+        source ~/.bashrc
+        conda activate mcp-agent
+        {cmd}
+        """)
 
     p = subprocess.Popen(["sbatch", slurm_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, err = p.communicate()
 
-
     if p.returncode != 0:
-    raise RuntimeError(f"Failed to submit SLURM job:\n{err.decode()}")
-
+        raise RuntimeError(f"Failed to submit SLURM job:\n{err.decode()}")
 
     output_str = output.decode("utf-8")
     print(output_str)
@@ -79,16 +76,16 @@ def run_gromacs_copilot(
         q = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         qout, _ = q.communicate()
         if job_id not in qout.decode("utf-8"):
-        break
+            break
         print("Job still running...")
         time.sleep(60)
 
 
     # Collect and return outputs
     with open(log_file, "r") as f:
-    logs = f.read()
+        logs = f.read()
     with open(err_file, "r") as f:
-    errors = f.read()
+        errors = f.read()
 
 
     return f"Job {job_id} completed.\n\nLog Output:\n{logs}\n\nErrors:\n{errors}"
@@ -101,9 +98,9 @@ def visualize_latest_gromacs_output(
     Automatically finds the latest GROMACS Copilot output and visualizes it in PyMOL.
     """
     try:
-    import pymol2
+        import pymol2
     except ImportError:
-    raise RuntimeError("PyMOL2 library is not installed. Please install it with 'pip install pymol-open-source' or use your PyMOL installation.")
+        raise RuntimeError("PyMOL2 library is not installed. Please install it with 'pip install pymol-open-source' or use your PyMOL installation.")
 
 
     # Look for .gro and .xtc files in the workspace
@@ -112,7 +109,7 @@ def visualize_latest_gromacs_output(
 
 
     if not pdb_files:
-    raise FileNotFoundError("No structure (.gro or .pdb) file found in the workspace.")
+        raise FileNotFoundError("No structure (.gro or .pdb) file found in the workspace.")
 
 
     pdb_file = pdb_files[0]
@@ -120,9 +117,9 @@ def visualize_latest_gromacs_output(
 
 
     with pymol2.PyMOL() as pymol:
-    pymol.cmd.load(pdb_file, "protein")
+        pymol.cmd.load(pdb_file, "protein")
     if trajectory_file:
-    pymol.cmd.load_traj(trajectory_file, "protein")
+        pymol.cmd.load_traj(trajectory_file, "protein")
     pymol.cmd.show("cartoon", "protein")
     pymol.cmd.color("cyan", "protein")
     pymol.cmd.orient("protein")
