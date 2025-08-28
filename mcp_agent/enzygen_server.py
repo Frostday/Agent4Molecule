@@ -21,7 +21,7 @@ mcp = FastMCP("enzygen")
 def build_enzygen_input(
     enzyme_family: Annotated[str, Field(description="Enzyme family name")],
     motif_seq: Annotated[str, Field(description="Sequence of the motif")],
-    motif_coord: Annotated[list[int], Field(description="Coordinates of the motif")],
+    motif_coord: Annotated[list[float], Field(description="Coordinates of the motif")],
     motif_indices: Annotated[list[int], Field(description="Indices of the motif")],
     motif_pdb: Annotated[str, Field(description="PDB file of the motif")],
     motif_ec4: Annotated[str, Field(description="EC4 file of the motif")],
@@ -30,14 +30,15 @@ def build_enzygen_input(
 ) -> str:
     file_name = os.path.join(ENZYGEN_PATH, "data/input.json")
     data = {}
-    indices, pdb, ec4, substrate = ",".join([str(i) for i in motif_indices])+"\n", motif_pdb, motif_ec4, motif_substrate
+    indices = ",".join([str(i) for i in sorted(motif_indices)])+"\n"
+    pdb, ec4, substrate = motif_pdb, motif_ec4, motif_substrate
     seq, coord = "", ""
     idx = 0
     for i in range(recommended_length):
         if i in motif_indices:
+            idx = motif_indices.index(i)
             seq += motif_seq[idx]
             coord += ",".join([str(i) for i in motif_coord[idx*3:idx*3+3]])+","
-            idx += 1
         else:
             seq += "A"
             coord += "0.0,0.0,0.0,"
