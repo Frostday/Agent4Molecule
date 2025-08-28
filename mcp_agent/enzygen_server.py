@@ -70,7 +70,7 @@ def run_enzygen(input_json: Annotated[str, Field(description="Location of script
     with open(run_file, "w") as f:
         f.write(text)
     with open(slurm_file, "w") as f:
-        f.write(f"#!/bin/bash\n#SBATCH -N 1\n#SBATCH -p GPU-shared\n#SBATCH -t 1:00:00\n#SBATCH --gpus=v100-32:1\n#SBATCH --output=output.log\n#SBATCH -n 2\n#SBATCH -e output.err\n#SBATCH -a 1-1\nbash {run_file}")
+        f.write(f"#!/bin/bash\n#SBATCH -N 1\n#SBATCH -p GPU-small\n#SBATCH -t 1:00:00\n#SBATCH --gpus=v100-32:1\n#SBATCH --output=output.log\n#SBATCH -n 2\n#SBATCH -e output.err\nbash {run_file}")
     os.system(f"chmod +x {run_file}")
     os.system(f"chmod +x {slurm_file}")
     
@@ -97,7 +97,7 @@ def run_enzygen(input_json: Annotated[str, Field(description="Location of script
         logs = f.read()
     with open(f"{ENZYGEN_PATH}/output.err", "r") as f:
         errors = f.read()
-    return "Predicted structure(s) from EnzyGen:\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "Error File:\n\n----------\n" + errors
+    return "Predicted structure(s) from EnzyGen:\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 def cleanup():

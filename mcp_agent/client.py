@@ -7,6 +7,7 @@ import json
 
 from google import genai
 from google.genai.types import GenerateContentConfig, Content, Part
+from utils import content_to_dict
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -85,9 +86,7 @@ class MCPClient:
             for tool in response.tools
         ]
 
-        final_response_parts = []
         while True:
-            # print("Current messages", messages)
             response = self._client.models.generate_content(
                 model=self.llm,
                 contents=messages,
@@ -95,59 +94,37 @@ class MCPClient:
                     tools=available_tools
                 )
             )
-           
-            # Gather all parts of the response
-            assistant_content = []
-            tool_calls = []
+            messages.append(response.candidates[0].content)
+
+            flag = True
             for part in response.candidates[0].content.parts:
-                if hasattr(part, "type") and part.type == "text":
-                    assistant_content.append(part)
-                    final_response_parts.append(part.text)
-                else:
-                    tool_calls.append(part)
-                if not part.function_call:
-                    break
-                #  Add assistant message to history
+                if part.function_call:
+                    tool_id = part.function_call.id
+                    tool_name = part.function_call.name
+                    tool_args = part.function_call.args
+                    print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
+                    tool_result = await self.session.call_tool(tool_name, tool_args)
+                    flag = False
                 messages.append(
-                    {
-                        'role': 'model', 
-                        'parts' : [{
-                            "functionCall": {
-                                "name": part.function_call.name,
-                                "args": part.function_call.args
-                            }
-                        }]
-                    }
-                )
-            if not tool_calls[0].function_call:
-                break
-
-            # Execute each tool call and append results
-            ans = None
-            function_responses = []
-            for tool_call in tool_calls:
-                tool_name = tool_call.function_call.name
-                tool_args = tool_call.function_call.args
-                tool_use_id = tool_call.function_call.id
-                print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
-                tool_result = await self.session.call_tool(tool_name, tool_args)
-                messages.append(
-                    {
-                        'role': 'function',
-                        'parts': [
-                            {
-                                'functionResponse': {
-                                    'name': tool_name, 
-                                    'response': {'output': tool_result.content[0].text}
-                                }
-                            }
+                    genai.types.Content(
+                        role='tool',
+                        parts=[
+                            genai.types.Part.from_function_response(
+                                name=tool_name,
+                                response={"result": str(tool_result.content[0].text)}
+                            )
                         ]
-                    }
+                    )
                 )
-                if tool_result:
-                    ans = tool_result.content[0].text
-
-        return ans
+            if flag:
+                break
+            # print(messages)
+        
+        os.makedirs("outputs", exist_ok=True)
+        with open("outputs/chat_history.json", "w") as f:
+            json.dump([content_to_dict(m) for m in messages], f, indent=2)
+        
+        return messages
 
     async def chat_loop(self):
         """Run an interactive chat loop"""
@@ -157,12 +134,13 @@ class MCPClient:
         while True:
             try:
                 query = input("\nQuery: ").strip()
+                # query = "Design an enzyme using the given data: - enzyme family = \"4.6.1\" - Motif sequence = \"DIG\" - Coordinates for the motif sequence (X1, Y1, Z1, X2, Y2, Z2) = [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0] - Indices of the the motif sequence = [0, 1, 4] - PDB file = \"5cxl.A\" - EC4 file = \"4.6.1.1\" - Substrate file = \"CHEBI_57540.sdf\" - Recommended length = 20"
                 
                 if query.lower() == 'quit':
                     break
                 
-                response = await self.process_query(query)
-                print("\n" + response)
+                message_history = await self.process_query(query)
+                print(message_history)
                     
             except Exception as e:
                 print(f"\nError: {str(e)}")
