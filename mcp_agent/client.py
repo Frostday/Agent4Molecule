@@ -96,6 +96,10 @@ class MCPClient:
             )
             messages.append(response.candidates[0].content)
 
+            os.makedirs("outputs", exist_ok=True)
+            with open("outputs/chat_history_temp.json", "w") as f:
+                json.dump([content_to_dict(m) for m in messages], f, indent=2)
+
             flag = True
             for part in response.candidates[0].content.parts:
                 if part.function_call:
@@ -105,17 +109,17 @@ class MCPClient:
                     print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
                     tool_result = await self.session.call_tool(tool_name, tool_args)
                     flag = False
-                messages.append(
-                    genai.types.Content(
-                        role='tool',
-                        parts=[
-                            genai.types.Part.from_function_response(
-                                name=tool_name,
-                                response={"result": str(tool_result.content[0].text)}
-                            )
-                        ]
+                    messages.append(
+                        genai.types.Content(
+                            role='tool',
+                            parts=[
+                                genai.types.Part.from_function_response(
+                                    name=tool_name,
+                                    response={"result": str(tool_result.content[0].text)}
+                                )
+                            ]
+                        )
                     )
-                )
             if flag:
                 break
             # print(messages)
