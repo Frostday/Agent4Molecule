@@ -48,8 +48,8 @@ def run_rf_diffusion(
     job_time: Annotated[str, Field(description="Time limit for diffusion jobs (estimated time is 3.5 * T_steps * N_design seconds)")] = "1:00:00"
 ) -> str:
     DIFFUSION_DIR = f"{WDIR}/0_diffusion"
+    os.makedirs(DIFFUSION_DIR, exist_ok=True)
     os.system(f"rm -rf {DIFFUSION_DIR}/*")
-    os.makedirs(DIFFUSION_DIR, exist_ok=False)
     os.chdir(DIFFUSION_DIR)
     config = RF_DIFFUSION_CONFIG.format(
         T_steps=T_steps,
@@ -526,9 +526,9 @@ def run_ligand_mpnn(
     job_time: Annotated[str, Field(description="Time limit for ligand MPNN jobs")] = "6:00:00"
 ):
     DESIGN_DIR_ligMPNN = f"{WDIR}/3.1_design_pocket_ligandMPNN"
-    os.system(f"rm -rf {DESIGN_DIR_ligMPNN}/*")
     os.makedirs(DESIGN_DIR_ligMPNN, exist_ok=True)
     os.makedirs(DESIGN_DIR_ligMPNN+"/logs", exist_ok=True)
+    os.system(f"rm -rf {DESIGN_DIR_ligMPNN}/*")
     os.chdir(DESIGN_DIR_ligMPNN)
     
     os.system(f"cp {SCRIPT_DIR}/scripts/design/scoring/heme_scoring.py {SCRIPT_DIR}/scripts/design/scoring/heme_scoring_new.py")
@@ -711,10 +711,10 @@ def run_fast_relax(
     job_time: Annotated[str, Field(description="Time limit for the job")] = "0:30:00"
 ):
     RELAX_DIR = f"{WDIR}/6.1_final_relax"
-    os.system(f"rm -rf {RELAX_DIR}/*")
     os.makedirs(RELAX_DIR, exist_ok=True)
-    os.chdir(RELAX_DIR)
     os.makedirs(RELAX_DIR+"/logs", exist_ok=True)
+    os.system(f"rm -rf {RELAX_DIR}/*")
+    os.chdir(RELAX_DIR)
 
     if len(input_pdbs) == 0:
         return "No input PDB files to relax with"

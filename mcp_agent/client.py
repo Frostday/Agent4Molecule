@@ -7,7 +7,7 @@ import json
 
 from google import genai
 from google.genai.types import GenerateContentConfig, Content, Part
-from utils import content_to_dict
+from agent_utils import content_to_dict
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
