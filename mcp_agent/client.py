@@ -127,6 +127,7 @@ class MCPClient:
         os.makedirs("outputs", exist_ok=True)
         with open("outputs/chat_history.json", "w") as f:
             json.dump([content_to_dict(m) for m in messages], f, indent=2)
+        os.system("rm -f outputs/chat_history_temp.json")
         
         return messages
 
