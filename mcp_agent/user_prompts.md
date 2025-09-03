@@ -49,6 +49,20 @@ Extract motifs
 Design an enzyme using the given data:\\n- enzyme family = \"4.6.1\" - Information about the motif:\\n    - Amino acid = \"I\", Coordinates = [1.0, 1.0, 1.0], Index = 1\\n    - Amino acid = \"G\", Coordinates = [2.0, 1.8, 1.5], Index = 4\\n    - Amino acid = \"D\", Coordinates = [1.1, 1.2, 2.0], Index = 0\\n- PDB file = \"5cxl.A\"\\n- EC4 file = \"4.6.1.1\"\\n- Substrate file = \"CHEBI_57540.sdf\"\\n- Recommended length = 20
 ---------------------------------------- -->
 
+Design an enzyme using the given data: 
+- enzyme family = "4.6.1" 
+- EC4 category = "4.6.1.1" 
+- Information about the motif:
+    - Amino acid = "I", Coordinates = [1.0, 1.0, 1.0], Index = 1
+    - Amino acid = "G", Coordinates = [2.0, 1.8, 1.5], Index = 4
+    - Amino acid = "D", Coordinates = [1.1, 1.2, 2.0], Index = 0
+- PDB file = "5cxl.A" 
+- Recommended length = 20 
+
+<!-- ----------------------------------------
+Design an enzyme using the given data:\\n- enzyme family = \"4.6.1\"\\n- EC4 category = \"4.6.1.1\"\\n- Information about the motif:\\n    - Amino acid = \"I\", Coordinates = [1.0, 1.0, 1.0], Index = 1\\n    - Amino acid = \"G\", Coordinates = [2.0, 1.8, 1.5], Index = 4\\n    - Amino acid = \"D\", Coordinates = [1.1, 1.2, 2.0], Index = 0\\n- PDB file = \"5cxl.A\"\\n- Recommended length = 20
+---------------------------------------- -->
+
 ### Prompt for heme binder:
 
 Design a heme binding protein using the given data: 

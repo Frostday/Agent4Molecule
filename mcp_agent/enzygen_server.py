@@ -23,15 +23,15 @@ def build_enzygen_input(
     motif_seq: Annotated[str, Field(description="Sequence of the motif")],
     motif_coord: Annotated[list[float], Field(description="Coordinates of the motif")],
     motif_indices: Annotated[list[int], Field(description="Indices of the motif")],
-    motif_pdb: Annotated[str, Field(description="PDB file of the motif")],
-    motif_ec4: Annotated[str, Field(description="EC4 file of the motif")],
-    motif_substrate: Annotated[str, Field(description="Substrate file of the motif")],
-    recommended_length: Annotated[int, Field(description="Recommended length of the motif")]
+    pdb_file: Annotated[str, Field(description="PDB file")],
+    ec4_category: Annotated[str, Field(description="EC4 category")],
+    recommended_length: Annotated[int, Field(description="Recommended length")],
+    substrate_file: Annotated[str, Field(description="Substrate file")] = None,
 ) -> str:
     file_name = os.path.join(ENZYGEN_PATH, "data/input.json")
     data = {}
     indices = ",".join([str(i) for i in sorted(motif_indices)])+"\n"
-    pdb, ec4, substrate = motif_pdb, motif_ec4, motif_substrate
+    pdb, ec4, substrate = pdb_file, ec4_category, substrate_file
     seq, coord = "", ""
     idx = 0
     for i in range(recommended_length):
@@ -51,10 +51,11 @@ def build_enzygen_input(
                 "motif": [indices],
                 "pdb": [pdb],
                 "ec4": [ec4],
-                "substrate": [substrate]
             }
         }
     }
+    if substrate:
+        data[enzyme_family]["test"]["substrate"] = [substrate]
     with open(file_name, 'w') as f:
         f.write(json.dumps(data, indent=4))
     return "Created input file for Enzygen: " + file_name
@@ -113,6 +114,6 @@ def cleanup():
 if __name__ == "__main__":
     mcp.run(transport='stdio')
     # cleanup()
-    # print(get_motif_sequence("4.6.1", "DIG", [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0], [0, 1, 4], "5cxl.A", "4.6.1.1", "CHEBI_57540.sdf", 5))
+    # print(get_motif_sequence("4.6.1", "DIG", [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0], [0, 1, 4], "5cxl.A", "4.6.1.1", 5, "CHEBI_57540.sdf"))
     # print(run_enzygen(f"{ENZYGEN_PATH}/data/input.json"))
     # print(run_enzygen(f"{ENZYGEN_PATH}/data/test_2.json"))
