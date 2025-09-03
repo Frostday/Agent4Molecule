@@ -1,4 +1,4 @@
-keys
+venv/keys
 mcp_agent/__pycache__
 mcp_agent/outputs
 mcp_agent/output.log

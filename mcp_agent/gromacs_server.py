@@ -18,16 +18,14 @@ mcp = FastMCP("gromacs")
 
 @mcp.tool()
 def run_gromacs_copilot(
-    workspace: Annotated[str, Field(description="Working directory for MD simulations")],
+    workspace: Annotated[str, Field(description="Working directory for MD simulations")] = "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace",
     prompt: Annotated[str, Field(description="Natural language prompt to control GROMACS Copilot")],
     api_key: Annotated[str, Field(description="API key for LLM service")],
     model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")],
     api_url: Annotated[str, Field(description="URL for LLM API")],
     mode: Annotated[str, Field(description="Copilot mode: copilot, agent, or debug")] = "agent"
 ) -> str:
-    import subprocess
 
-    # Example command:
     cmd = [
         "gmx_copilot",
         "--workspace", workspace,
@@ -50,7 +48,7 @@ def run_gromacs_copilot(
 
 @mcp.tool()
 def visualize_latest_gromacs_output(
-    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")]
+    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")] = "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace"
 ) -> str:
     """
     Automatically finds the latest GROMACS Copilot output and visualizes it in PyMOL.
