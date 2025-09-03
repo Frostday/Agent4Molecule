@@ -144,3 +144,8 @@ def visualize_latest_gromacs_output(
     # Find pdb file name
     pdb_files = glob.glob(os.path.join(workspace, "*.pdb"))
     return f"Visualization complete for {os.path.basename(pdb_files[0])}. RMSD and RMSF plots saved to workspace if available."
+
+
+if __name__ == "__main__":
+    # Initialize and run the server
+    mcp.run(transport='stdio')

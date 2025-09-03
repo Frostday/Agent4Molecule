@@ -129,6 +129,7 @@ User request: {query}
             assistant_content = []
             tool_calls = []
 
+            print('response: ', response)
            
             for part in response.candidates[0].content.parts:
           
@@ -159,6 +160,7 @@ User request: {query}
         # Execute each tool call and append results
             ans = None
             function_responses = []
+            print('tool: ', tool_calls)
             for tool_call in tool_calls:
            
                 tool_name = tool_call.function_call.name
