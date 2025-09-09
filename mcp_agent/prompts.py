@@ -41,6 +41,8 @@ Based on what the user requests, determin the right sequence of tools to run, an
 If the user provides values for parameters, use those instead of the default ones.
 
 The heme binder pipeline follows this sequence: Run RF Diffusion -> Analyze RF Diffusion Outputs -> Run ProteinMPNN -> Run AF2 -> Analyze AF2 Outputs -> Run LigandMPNN -> Analyze LigandMPNN Outputs -> Run LigandMPNN on 2nd layer residues -> Run AF2 -> Analyze AF2 Outputs -> Run FastRelax -> Analyze FastRelax Outputs
+At any step, if the model does not meet the required criteria (e.g., SASA, RMSD, LDDT, etc.), try rerunning the previous stages with improved parameters.
+Do not continue the pipeline with number of good structure(s) being 0 (try making thresholds more flexible if required).
 
 User request: {query}
 """

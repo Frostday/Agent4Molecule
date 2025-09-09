@@ -117,8 +117,9 @@ def run_rf_diffusion(
         with open(os.path.join(rundir, "output.log"), "r") as f:
             rfa_logs.append(f"File: {os.path.join(DIFFUSION_DIR, rundir, 'output.log')}\n\n" + f.read())
             
-    # return f"Predicted backbone structure(s) from RFDiffusionAA:\nAll output files: {diffusion_output_files}\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors + "\n----------\n"
-    return f"Predicted backbone structure(s) from RFDiffusionAA:\nAll output files: {diffusion_output_files}\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"RFDiffusionAA Job Completed\nAll output files: {diffusion_output_files}\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"RFDiffusionAA Job Completed\nAll output files: {diffusion_output_files}\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\n" + "RFDiffusionAA Log Files:\n\n----------\n" + "\n----------\n----------\n".join(rfa_logs) + "\n----------\n\n" + "Error File:\n\n----------\n" + errors + "\n----------\n"
+    return f"RFDiffusionAA Job Completed\nAll output files: {diffusion_output_files}\n\n" + "Log File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -217,22 +218,25 @@ def analyze_rf_diffusion_outputs(
     dif_analysis_df = pd.read_csv(f"{DIFFUSION_DIR}/diffusion_analysis.sc", header=0, sep=r"\s+")
     # print(dif_analysis_df)
 
-    plt.figure(figsize=(12, 12))
-    for i,k in enumerate(dif_analysis_df.keys()):
-        if k in ["description"]:
-            continue
-        plt.subplot(4, 3, i+1)
-        plt.hist(dif_analysis_df[k])
-        plt.title(k)
-        plt.xlabel(k)
-    plt.tight_layout()
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
-    os.makedirs(output_dir, exist_ok=True)
-    img_path = os.path.join(output_dir, "outputs_0_analyze.png")
-    plt.savefig(img_path)
-    plt.close()
+    if len(diffused_backbones_good) > 0:
+        plt.figure(figsize=(12, 12))
+        for i,k in enumerate(dif_analysis_df.keys()):
+            if k in ["description"]:
+                continue
+            plt.subplot(4, 3, i+1)
+            plt.hist(dif_analysis_df[k])
+            plt.title(k)
+            plt.xlabel(k)
+        plt.tight_layout()
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
+        os.makedirs(output_dir, exist_ok=True)
+        img_path = os.path.join(output_dir, "outputs_0_analyze.png")
+        plt.savefig(img_path)
+        plt.close()
+    else:
+        img_path = "No image generated"
 
-    return f"Number of good backbone structure(s): {len(diffused_backbones_good)}\nAll output files: {diffused_backbones_good}\n\nDistribution plot path: {img_path}\n\nAnalysis CSV:\n\n----------\n" + dif_analysis_df.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    return f"RFDiffusion Structures Filtered\nNumber of good backbone structure(s): {len(diffused_backbones_good)}\nAll output files: {diffused_backbones_good}\n\nDistribution plot path: {img_path}\n\nAnalysis CSV:\n\n----------\n" + dif_analysis_df.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -245,7 +249,7 @@ def run_protein_mpnn(
 ):
     MPNN_DIR = f"{WDIR}/1_proteinmpnn"
     if len(diffused_backbones_good) == 0:
-        return "No good backbones found!"
+        return "Error: No good backbones!"
     os.makedirs(MPNN_DIR, exist_ok=True)
     os.chdir(MPNN_DIR)
     os.system(f"rm -rf {MPNN_DIR}/*")
@@ -258,7 +262,7 @@ def run_protein_mpnn(
     json_creation_logs = output.decode('utf-8')
     json_creation_errors = err.decode('utf-8')
     if not os.path.exists("masked_pos.jsonl"):
-        return "Failed to create masked positions JSONL file\n\nLog File:\n\n----------\n" + json_creation_logs + "\n----------\n\nError File:\n\n----------\n" + json_creation_errors + "\n----------\n"
+        return "Error: Failed to create masked positions JSONL file\n\nLog File:\n\n----------\n" + json_creation_logs + "\n----------\n\nError File:\n\n----------\n" + json_creation_errors + "\n----------\n"
 
     commands_mpnn = []
     cmds_filename_mpnn = "commands_mpnn"
@@ -311,9 +315,9 @@ def run_protein_mpnn(
         backbones.append(f"File: {b}\n\n" + pdb)
     protein_seq_fasta_files = glob.glob(f"{MPNN_DIR}/seqs/*.fa")
     
-    # return f"Predicted structure(s) from ProteinMPNN:\nAll output files: {protein_seq_fasta_files}\n\nSequences:\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nBackbones:\n\n----------\n" + "\n----------\n----------\n".join(backbones) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nMasked positions JSONL file creation logs:\n\n----------\n" + json_creation_logs + "\n----------\n\nMasked positions JSONL file creation errors:\n\n----------\n" + json_creation_errors + "\n----------\n"
-    # return f"Predicted sequence(s) from ProteinMPNN:\nAll output files: {protein_seq_fasta_files}\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nMasked positions JSONL file creation logs:\n\n----------\n" + json_creation_logs + "\n----------\n\nMasked positions JSONL file creation errors:\n\n----------\n" + json_creation_errors + "\n----------\n"
-    return f"Predicted sequence(s) from ProteinMPNN:\nAll output files: {protein_seq_fasta_files}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nMasked positions JSONL file creation logs:\n\n----------\n" + json_creation_logs + "\n----------\n\nMasked positions JSONL file creation errors:\n\n----------\n" + json_creation_errors + "\n----------\n"
+    # return f"ProteinMPNN Job Completed\nAll output files: {protein_seq_fasta_files}\n\nSequences:\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nBackbones:\n\n----------\n" + "\n----------\n----------\n".join(backbones) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nMasked positions JSONL file creation logs:\n\n----------\n" + json_creation_logs + "\n----------\n\nMasked positions JSONL file creation errors:\n\n----------\n" + json_creation_errors + "\n----------\n"
+    # return f"ProteinMPNN Job Completed\nAll output files: {protein_seq_fasta_files}\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nMasked positions JSONL file creation logs:\n\n----------\n" + json_creation_logs + "\n----------\n\nMasked positions JSONL file creation errors:\n\n----------\n" + json_creation_errors + "\n----------\n"
+    return f"ProteinMPNN Job Completed\nAll output files: {protein_seq_fasta_files}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nMasked positions JSONL file creation logs:\n\n----------\n" + json_creation_logs + "\n----------\n\nMasked positions JSONL file creation errors:\n\n----------\n" + json_creation_errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -406,9 +410,9 @@ def run_af2(
         af2_scores_csv = f.read()
     af2_out_files = glob.glob(f"{AF2_DIR}/*.pdb")
     
-    # return f"Predicted structure(s) from AF2:\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + "\n----------\n\nInput Sequences:\n\n----------\n" + input_sequences + f"\n----------\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
-    # return f"Predicted structure(s) from AF2:\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + f"\n----------\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
-    return f"Predicted structure(s) from AF2:\nAll output files: {af2_out_files}\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + "\n----------\n\nInput Sequences:\n\n----------\n" + input_sequences + f"\n----------\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + f"\n----------\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -418,9 +422,9 @@ def analyze_af2_outputs(
     after_ligand_mpnn: Annotated[bool, Field(description="Running AF2 after ligand MPNN (True) or Protein MPNN (False)")] = False,
     af2_output_csv_paths: Annotated[list[str], Field(description="AF2 output CSV file(s) paths (default is all CSV files in the AF2 directory)")] = None,
     job_time: Annotated[str, Field(description="Time limit for AF2 analysis jobs")] = "1:00:00",
-    lDDT: Annotated[float, Field(description="lDDT minimum cutoff")] = 85.0,
-    rmsd: Annotated[float, Field(description="rmsd maximum cutoff")] = 2.0,
-    rmsd_SR1: Annotated[float, Field(description="rmsd_SR1 maximum cutoff")] = 3.0
+    lDDT: Annotated[float, Field(description="lDDT minimum cutoff")] = 70.0,
+    rmsd: Annotated[float, Field(description="rmsd maximum cutoff")] = 5.0,
+    rmsd_SR1: Annotated[float, Field(description="rmsd_SR1 maximum cutoff")] = 10.0
 ):
     if after_ligand_mpnn:
         AF2_DIR = f"{WDIR}/5.1_2nd_af2"
@@ -434,7 +438,7 @@ def analyze_af2_outputs(
     if af2_output_csv_paths is None:
         os.system("head -n 1 $(ls *aa*.csv | shuf -n 1) > scores.csv ; for f in *aa*.csv ; do tail -n +2 ${f} >> scores.csv ; done")
         if not os.path.exists("scores.csv"):
-            return "CSV file not found"
+            return "Error: CSV file not found"
     else:
         df = pd.DataFrame()
         for csv in af2_output_csv_paths:
@@ -502,7 +506,10 @@ def analyze_af2_outputs(
             copy2(pdb, f"good/{pdb}")
         good_af2_models = glob.glob(f"{AF2_DIR}/good/*.pdb")
     else:
-        return f"No good models to continue this pipeline with\n\nCSV File:\n\n----------\n{scores_af2.to_csv(index=False)}\n----------\n\nLogs:\n\n----------\n" + logs + "\n----------\n\nErrors:\n\n----------\n" + errors + "\n----------\n"
+        return f"Error: No good models to continue this pipeline with\n\nCSV File:\n\n----------\n{scores_af2.to_csv(index=False)}\n----------\n\nLogs:\n\n----------\n" + logs + "\n----------\n\nErrors:\n\n----------\n" + errors + "\n----------\n"
+
+    if after_ligand_mpnn:
+        return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered output files: {glob.glob(f"{AF2_DIR}/good/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n"
 
     os.chdir(f"{AF2_DIR}/good")
     align_cmd = f"{PYTHON['general']} {SCRIPT_DIR}/scripts/utils/place_ligand_after_af2.py "\
@@ -518,8 +525,9 @@ def analyze_af2_outputs(
             pdb_content = f.read()
         final_output.append(f"File: {pdb}\n\n" + pdb_content)
 
-    # return f"AF2 analysis filtered output files: {good_af2_models}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distrbution Plot: {img_path}\n\n----------\n" + "\n----------\n----------\n".join(final_output) + "\n----------\n\nCSV File:\n\n----------\n" + scores_af2.to_csv(index=False) + "\n----------\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
-    return f"AF2 analysis filtered output files: {good_af2_models}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distrbution Plot: {img_path}\n\nCSV File:\n\n----------\n" + scores_af2.to_csv(index=False) + "\n----------\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
+    # return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered output files: {good_af2_models}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\n----------\n" + "\n----------\n----------\n".join(final_output) + "\n----------\n\nCSV File:\n\n----------\n" + scores_af2.to_csv(index=False) + "\n----------\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
+    # return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered output files: {good_af2_models}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\nCSV File:\n\n----------\n" + scores_af2.to_csv(index=False) + "\n----------\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
+    return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
 
 
 @mcp.tool()
@@ -527,16 +535,21 @@ def run_ligand_mpnn(
     input_pdbs: Annotated[list[str], Field(description="Input PDB files (aligned and filtered outputs of AF2 analysis)")],
     cstfile: Annotated[str, Field(description="Path to CST file")],
     params: Annotated[list[str], Field(description="Rosetta params file(s) paths")],
-    filters: Annotated[dict, Field(description="Filtering criteria for ligand MPNN designs - minimum requirements (example: {\"all_cst\": [1.5, \"<=\"], \"L_SASA\": [0.20, \"<=\"], \"COO_hbond\": [1.0, \"=\"], \"cms_per_atom\": [5.0, \">=\"], \"corrected_ddg\": [-50.0, \"<=\"], \"nlr_totrms\": [0.8, \"<=\"], \"nlr_SR1_rms\": [0.6, \"<=\"]})")] = {},
+    # filters: Annotated[dict, Field(description="Filtering criteria for ligand MPNN designs - minimum requirements (example: {\"all_cst\": [1.5, \"<=\"], \"L_SASA\": [0.20, \"<=\"], \"COO_hbond\": [1.0, \"=\"], \"cms_per_atom\": [5.0, \">=\"], \"corrected_ddg\": [-50.0, \"<=\"], \"nlr_totrms\": [0.8, \"<=\"], \"nlr_SR1_rms\": [0.6, \"<=\"]})")] = {},
     align_atoms: Annotated[list[str], Field(description="Ligand atom names used for aligning the rotamers (example: ['N1', 'N2'])")] = [],
     NSTRUCT: Annotated[int, Field(description="Number of ligand MPNN designs")] = 5,
     job_time: Annotated[str, Field(description="Time limit for ligand MPNN jobs")] = "6:00:00"
 ):
+    filters = {}
     DESIGN_DIR_ligMPNN = f"{WDIR}/3.1_design_pocket_ligandMPNN"
     os.makedirs(DESIGN_DIR_ligMPNN, exist_ok=True)
     os.system(f"rm -rf {DESIGN_DIR_ligMPNN}/*")
     os.makedirs(DESIGN_DIR_ligMPNN+"/logs", exist_ok=True)
     os.chdir(DESIGN_DIR_ligMPNN)
+
+    for pdb in input_pdbs:
+        if not pdb.endswith(".pdb"):
+            return "Error: All input PDB files must end with .pdb"
     
     os.system(f"cp {SCRIPT_DIR}/scripts/design/scoring/heme_scoring.py {SCRIPT_DIR}/scripts/design/scoring/heme_scoring_new.py")
     with open(f"{SCRIPT_DIR}/scripts/design/scoring/heme_scoring_new.py", "a") as file:
@@ -557,7 +570,8 @@ def run_ligand_mpnn(
         N_cores=2, 
         time=job_time, 
         array=len(commands_design),
-        array_commandfile=cmds_filename_des
+        array_commandfile=cmds_filename_des,
+        partition="GPU-shared"
     )
 
     p = subprocess.Popen(["sbatch", submit_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -584,10 +598,14 @@ def run_ligand_mpnn(
     for log_file in glob.glob(f"{DESIGN_DIR_ligMPNN}/logs/*.log"):
         with open(log_file, "r") as f:
             lig_mpnn_logs.append(f"File: {log_file}\n\n{f.read()}")
-    scores = pd.read_csv("scorefile.txt", sep=r"\s+", header=0)
-
-    # return f"Ligand MPNN Designs Generated\nAll output files: {pdb_files}\nScores File: {os.path.join(DESIGN_DIR_ligMPNN, "scorefile.txt")}\n\n----------\n" + "\n----------\n----------\n".join(pdb_content) + "\n----------\n\nScores file:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nLigand MPNN Logs:\n\n----------\n" + "\n----------\n----------\n".join(lig_mpnn_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
-    return f"Ligand MPNN Designs Generated\nAll output files: {pdb_files}\nScores File: {os.path.join(DESIGN_DIR_ligMPNN, "scorefile.txt")}\nScores file:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nLigand MPNN Logs:\n\n----------\n" + "\n----------\n----------\n".join(lig_mpnn_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    if os.path.exists("scorefile.txt"):
+        scores = pd.read_csv("scorefile.txt", sep=r"\s+", header=0)
+    else:
+        return "Error: Ligand MPNN ran into an error:\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nLigand MPNN Logs:\n\n----------\n" + "\n----------\n----------\n".join(lig_mpnn_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    
+    # return f"LigandMPNN Job Completed\nAll output files: {pdb_files}\nScores File: {os.path.join(DESIGN_DIR_ligMPNN, "scorefile.txt")}\n\n----------\n" + "\n----------\n----------\n".join(pdb_content) + "\n----------\n\nScores file:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nLigand MPNN Logs:\n\n----------\n" + "\n----------\n----------\n".join(lig_mpnn_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"LigandMPNN Job Completed\nAll output files: {pdb_files}\nScores File: {os.path.join(DESIGN_DIR_ligMPNN, "scorefile.txt")}\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nLigand MPNN Logs:\n\n----------\n" + "\n----------\n----------\n".join(lig_mpnn_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    return f"LigandMPNN Job Completed\nAll output files: {pdb_files}\nScores File: {os.path.join(DESIGN_DIR_ligMPNN, "scorefile.txt")}\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -619,10 +637,11 @@ def analyze_ligand_mpnn_outputs(
         for idx, row in filtered_scores.iterrows():
             copy2(row["description"]+".pdb", "good/"+row["description"]+".pdb")
     else:
-        return "No good designs created, change the filtering criteria or rerun the previous jobs with better parameters\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n"
+        return "Error: No good designs created, change the filtering criteria or rerun the previous jobs with better parameters\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n"
 
-    # return f"Ligand MPNN Designs Filtered\nAll output files:{glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
-    return f"Ligand MPNN Designs Filtered\nAll output files:{glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
+    # return f"Ligand MPNN Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
+    # return f"Ligand MPNN Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
+    return f"Ligand MPNN Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n"
 
 
 @mcp.tool()
@@ -643,7 +662,10 @@ def run_ligand_mpnn_redesign_2nd_layer_residues(
     os.chdir(DESIGN_DIR_2nd_mpnn)
     
     if len(input_pdbs) == 0:
-        return "No designs to run 2nd MPNN on."
+        return "Error: No designs to run 2nd MPNN on."
+    for pdb in input_pdbs:
+        if not pdb.endswith(".pdb"):
+            return "Error: All input PDB files must end with .pdb"
 
     ### Making a JSON file specifiying designable positions for each structure.
     ### Will also make non-pocket ALA positions as designable.
@@ -657,7 +679,7 @@ def run_ligand_mpnn_redesign_2nd_layer_residues(
     json_file_creation_logs = output.decode('utf-8')
     json_file_creation_errors = err.decode('utf-8')
     if not os.path.exists(os.path.join("masked_pos.jsonl")):
-        return "Failed to create masked positions JSONL file\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
+        return "Error: Failed to create masked positions JSONL file\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
 
     commands_mpnn = []
     cmds_filename_mpnn = "commands_mpnn"
@@ -709,15 +731,15 @@ def run_ligand_mpnn_redesign_2nd_layer_residues(
         backbones.append(f"File: {b}\n\n" + pdb)
     protein_seq_fasta_files = glob.glob(f"{DESIGN_DIR_2nd_mpnn}/seqs/*.fa")
     
-    # return f"Predicted structure(s) from LigandMPNN:\nAll output files: {protein_seq_fasta_files}\n\nSequences:\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nBackbones:\n\n----------\n" + "\n----------\n----------\n".join(backbones) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
-    # return f"Predicted sequence(s) from LigandMPNN:\nAll output files: {protein_seq_fasta_files}\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
-    return f"Predicted sequence(s) from LigandMPNN:\nAll output files: {protein_seq_fasta_files}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
+    # return f"LigandMPNN Job Completed\nAll output files: {protein_seq_fasta_files}\n\nSequences:\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nBackbones:\n\n----------\n" + "\n----------\n----------\n".join(backbones) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
+    # return f"LigandMPNN Job Completed\nAll output files: {protein_seq_fasta_files}\n\n----------\n" + "\n----------\n----------\n".join(sequences) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
+    return f"LigandMPNN Job Completed\nAll output files: {protein_seq_fasta_files}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n\nJSON File (designable positions) Creation Logs:\n\n----------\n" + json_file_creation_logs + "\n----------\n\nJSON File (designable positions) Creation Errors:\n\n----------\n" + json_file_creation_errors + "\n----------\n"
 
 
 @mcp.tool()
 def run_fast_relax(
-    input_pdbs: Annotated[list[str], Field(description="Paths to input PDB file(s) (from AF2 good models)")],
-    ref_pdb: Annotated[list[str], Field(description="Paths to reference PDB file(s) (from Ligand MPNN good pocket designs)")],
+    input_pdbs: Annotated[list[str], Field(description="Paths to input PDB file(s) (from AF2 filtered good models)")],
+    ref_pdbs: Annotated[list[str], Field(description="Paths to reference PDB file(s) (make sure to give all the structures from Ligand MPNN good pocket designs)")],
     cstfile: Annotated[str, Field(description="Path to CST file")],
     LIGAND: Annotated[str, Field(description="Ligand name")],
     params: Annotated[list[str], Field(description="Rosetta params file(s) paths")],
@@ -731,16 +753,19 @@ def run_fast_relax(
     os.chdir(RELAX_DIR)
 
     if len(input_pdbs) == 0:
-        return "No input PDB files to relax with"
+        return "Error: No input PDB files to relax with"
+    for pdb in input_pdbs:
+        if not pdb.endswith(".pdb"):
+            return "Error: All input PDB files must end with .pdb"
     
     ref_and_model_pairs = []
-    for r in ref_pdb:
+    for r in ref_pdbs:
         for pdbfile in input_pdbs:
             if os.path.basename(r).replace(".pdb", "_") in pdbfile:
                 ref_and_model_pairs.append((r, pdbfile))
 
     if len(ref_and_model_pairs) != len(input_pdbs): 
-        return "Was not able to match all models with reference structures"
+        return "Error: Was not able to match all models with reference structures"
 
     commands_relax = []
     cmds_filename_rlx = "commands_relax"
@@ -763,6 +788,7 @@ def run_fast_relax(
 
     p = subprocess.Popen(['sbatch', submit_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
+    print(output.decode('utf-8'), err.decode('utf-8'))
     job_id = extract_job_id(output.decode('utf-8'))
     print("Fast Relax Job ID:", job_id)
     while True:
@@ -786,10 +812,14 @@ def run_fast_relax(
     for log_file in glob.glob(f"{RELAX_DIR}/logs/*.log"):
         with open(log_file, "r") as f:
             relax_logs.append(f"File: {log_file}\n\n{f.read()}")
-    scores = pd.read_csv("scorefile.txt", sep=r"\s+", header=0)
+    if os.path.exists("scorefile.txt"):
+        scores = pd.read_csv("scorefile.txt", sep=r"\s+", header=0)
+    else:
+        return "Fast Relax job ran into an error\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
     # return f"Fast Relax Job Completed\nAll output files: {pdb_files}\nScores File: {os.path.join(RELAX_DIR, "scorefile.txt")}\n\nPDB Files:\n\n----------\n" + "\n----------\n----------\n".join(pdb_content) + "\n----------\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nFast Relax Logs:\n\n----------\n" + "\n----------\n----------\n".join(relax_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
-    return f"Fast Relax Job Completed\nAll output files: {pdb_files}\nScores File: {os.path.join(RELAX_DIR, "scorefile.txt")}\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nFast Relax Logs:\n\n----------\n" + "\n----------\n----------\n".join(relax_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"Fast Relax Job Completed\nAll output files: {pdb_files}\nScores File: {os.path.join(RELAX_DIR, "scorefile.txt")}\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nFast Relax Logs:\n\n----------\n" + "\n----------\n----------\n".join(relax_logs) + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    return f"Fast Relax Job Completed\nAll output files: {pdb_files}\nScores File: {os.path.join(RELAX_DIR, "scorefile.txt")}\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -824,10 +854,11 @@ def analyze_fast_relax_outputs(
         for idx, row in filtered_scores.iterrows():
             copy2(row["description"]+".pdb", "good/"+row["description"]+".pdb")
     else:
-        return "No good designs created, change the filtering criteria or rerun the previous jobs with better parameters\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n"
+        return "Error: No good designs created, change the filtering criteria or rerun the previous jobs with better parameters\n\nScores File:\n\n----------\n" + scores.to_csv(index=False) + "\n----------\n"
     
-    # return f"Fast Relax Designs Filtered\nAll output files:{glob.glob(f"{RELAX_DIR}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
-    return f"Fast Relax Designs Filtered\nAll output files:{glob.glob(f"{RELAX_DIR}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
+    # return f"Fast Relax Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{RELAX_DIR}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
+    # return f"Fast Relax Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{RELAX_DIR}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
+    return f"Fast Relax Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{RELAX_DIR}/good/*.pdb")}\n\nScores Distribution Plot: {img_path}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n"
 
 
 def cleanup():
@@ -949,7 +980,7 @@ if __name__ == "__main__":
 
     # output = run_fast_relax(
     #     input_pdbs=glob.glob(f"{WDIR}/5.1_2nd_af2/good/*.pdb"),
-    #     ref_pdb=glob.glob(f"{WDIR}/3.1_design_pocket_ligandMPNN/good/*.pdb"),
+    #     ref_pdbs=glob.glob(f"{WDIR}/3.1_design_pocket_ligandMPNN/good/*.pdb"),
     #     cstfile=f"{SCRIPT_DIR}/theozyme/HBA/HBA_CYS_UPO.cst",
     #     LIGAND="HBA",
     #     params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
