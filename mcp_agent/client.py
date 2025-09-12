@@ -7,6 +7,7 @@ import json
 
 from google import genai
 from google.genai.types import GenerateContentConfig, Content, Part
+from agent_utils import content_to_dict
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -85,9 +86,7 @@ class MCPClient:
             for tool in response.tools
         ]
 
-        final_response_parts = []
         while True:
-            # print("Current messages", messages)
             response = self._client.models.generate_content(
                 model=self.llm,
                 contents=messages,
@@ -95,77 +94,54 @@ class MCPClient:
                     tools=available_tools
                 )
             )
-           
-            # Gather all parts of the response
-            assistant_content = []
-            tool_calls = []
+            messages.append(response.candidates[0].content)
+
+            os.makedirs("outputs", exist_ok=True)
+            with open("outputs/chat_history_temp.json", "w") as f:
+                json.dump([content_to_dict(m) for m in messages], f, indent=2)
+
+            flag = True
             for part in response.candidates[0].content.parts:
-                if hasattr(part, "type") and part.type == "text":
-                    assistant_content.append(part)
-                    final_response_parts.append(part.text)
-                else:
-                    tool_calls.append(part)
-                if not part.function_call:
-                    break
-                #  Add assistant message to history
-                messages.append(
-                    {
-                        'role': 'model', 
-                        'parts' : [{
-                            "functionCall": {
-                                "name": part.function_call.name,
-                                "args": part.function_call.args
-                            }
-                        }]
-                    }
-                )
-            if not tool_calls[0].function_call:
+                if part.function_call:
+                    tool_id = part.function_call.id
+                    tool_name = part.function_call.name
+                    tool_args = part.function_call.args
+                    print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
+                    tool_result = await self.session.call_tool(tool_name, tool_args)
+                    flag = False
+                    messages.append(
+                        genai.types.Content(
+                            role='tool',
+                            parts=[
+                                genai.types.Part.from_function_response(
+                                    name=tool_name,
+                                    response={"result": str(tool_result.content[0].text)}
+                                )
+                            ]
+                        )
+                    )
+            if flag:
                 break
-
-            # Execute each tool call and append results
-            ans = None
-            function_responses = []
-            for tool_call in tool_calls:
-                tool_name = tool_call.function_call.name
-                tool_args = tool_call.function_call.args
-                tool_use_id = tool_call.function_call.id
-                print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
-                tool_result = await self.session.call_tool(tool_name, tool_args)
-                messages.append(
-                    {
-                        'role': 'function',
-                        'parts': [
-                            {
-                                'functionResponse': {
-                                    'name': tool_name, 
-                                    'response': {'output': tool_result.content[0].text}
-                                }
-                            }
-                        ]
-                    }
-                )
-                if tool_result:
-                    ans = tool_result.content[0].text
-
-        return ans
+            # print(messages)
+        
+        os.makedirs("outputs", exist_ok=True)
+        with open("outputs/chat_history.json", "w") as f:
+            json.dump([content_to_dict(m) for m in messages], f, indent=2)
+        # os.system("rm -f outputs/chat_history_temp.json")
+        
+        return messages
 
     async def chat_loop(self):
         """Run an interactive chat loop"""
         print("\nMCP Client Started!")
         print("Type your queries or 'quit' to exit.")
         
-        while True:
-            try:
-                query = input("\nQuery: ").strip()
-                
-                if query.lower() == 'quit':
-                    break
-                
-                response = await self.process_query(query)
-                print("\n" + response)
-                    
-            except Exception as e:
-                print(f"\nError: {str(e)}")
+        query = input("\nQuery: ").strip()
+        # query = "Design an enzyme that functions as an adenylate-processing protein, acting like a cyclase to transform ATP into 3’,5’-cyclic AMP while releasing pyrophosphate. The enzyme should resemble known adenylylcyclases in structure and activity, and be capable of catalyzing the formation of cyclic AMP as a signaling molecule."
+        # query = "Design a heme binding protein using the given data: \\n- Input PDB with protein and ligand: \"/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb\"\\n- Ligand name: \"HBA\"\\n- Parameters file: \"/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/theozyme/HBA/HBA.params\"\\n- CST file: \"/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/theozyme/HBA/HBA_CYS_UPO.cst\"\\n- ligand atoms that should be excluded from clashchecking because they are flexible: \"O1 O2 O3 O4 C5 C10\"\\n- ligand atoms that need to be more exposed and the required SASA for those atoms: \"C45 C46 C47\" and SASA should be 10.0\\n- amino acids should be excluded from consideration when generating protein sequences: \"CM\"\\n- ligand atom used for aligning the rotamers: \"N1\", \"N2\", \"N3\", \"N4\"\\nHere are some properties you should try to obtain:\\n- SASA <= 0.3\\n- RMSD <= 5\\n- LDDT >= 80\\n- Terminal residue limit < 15\\n- Radius of gyration limit for protein compactness <= 30\\n- all_cst <= 1.5\\n- CMS per atom >= 3.0\\n- CYS atom is A15".replace("\\n", "\n")
+        
+        message_history = await self.process_query(query)
+        # print(message_history)
     
     async def cleanup(self):
         """Clean up resources"""

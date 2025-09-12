@@ -5,4 +5,5 @@ Capstone project
 
 ```
 python client.py enzygen_server.py
+python client.py heme_binder_server.py
 ```
