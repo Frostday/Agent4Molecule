@@ -4,13 +4,15 @@ import re
 import seaborn as sns
 from mcp.server.fastmcp import FastMCP
 from typing import Annotated
-import os,glob
+import os,glob,shlex
 from pydantic import Field
 import subprocess
 import time
 
-
 mcp = FastMCP("gromacs")
+
+def _shquote(s: str) -> str:
+    return shlex.quote(s)
 
 def extract_job_id(output: str) -> str:
     """Extracts the job ID from the output of the sbatch command."""
@@ -24,35 +26,53 @@ def extract_job_id(output: str) -> str:
 @mcp.tool()
 def run_gromacs_copilot(
     prompt: Annotated[str, Field(description="Natural language prompt to control GROMACS Copilot")],
-    api_key: Annotated[str, Field(description="API key for LLM service")],
-    model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")],
-    api_url: Annotated[str, Field(description="URL for LLM API")],
-    workspace: Annotated[str, Field(description="Working directory for MD simulations")] = "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace",
+    api_key: Annotated[str, Field(description="API key for LLM service")] = os.getenv("GEMINI_API_KEY"),
+    model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")] = "gemini-2.0-flash",
+    api_url: Annotated[str, Field(description="URL for LLM API")] = "https://generativelanguage.googleapis.com/v1beta/chat/completions",
+    workspace: Annotated[str, Field(description="Working directory for MD simulations")] = "/jet/home/eshen3/gromacs_copilot/md_workspace",
     mode: Annotated[str, Field(description="Copilot mode: copilot, agent, or debug")] = "agent"
     ) -> str:
     """
     Submits a SLURM job to run GROMACS Copilot and waits for completion.
     """
-    slurm_script = os.path.join(workspace, "run_copilot.slurm")
-    log_file = os.path.join(workspace, "copilot_output.log")
-    err_file = os.path.join(workspace, "copilot_output.err")
 
-    cmd = f"gmx_copilot --workspace {workspace} --prompt \"{prompt}\" --api-key {api_key} --model {model} --url {api_url} --mode {mode}"
+    print(f"Running GROMACS Copilot in workspace: {workspace}")
+
+    slurm_script = os.path.join(workspace, "run_copilot.sh")
+    log_file = os.path.join(workspace, "copilot_output.log")
+
+    # Build the gmx_copilot command (quote everything)
+    cmd = (
+        f"gmx_copilot "
+        f"--workspace {_shquote(workspace)} "
+        f"--prompt {_shquote(prompt)} "
+        f"--api-key {api_key} "
+        f"--model {_shquote(model)} "
+        f"--url {_shquote(api_url)} "
+        f"--mode {_shquote(mode)}"
+    )
+
+    script_text = (
+        "#!/bin/bash\n"
+        f"#SBATCH -N 1\n"
+        f"#SBATCH -p GPU-shared\n"
+        f"#SBATCH -t 24:00:00\n"
+        f"#SBATCH --gres=gpu:1\n"
+        f"#SBATCH --output={log_file}\n\n"
+        "source ~/.bashrc\n"
+        'eval "$(conda shell.bash hook)"\n'
+        f'echo "=== Activating conda env"\n'
+        f"conda activate gromacs_env\n\n"
+        "nvidia-smi\n"
+        'echo "=== Setting project path"\n'
+        f"cd /jet/home/eshen3/gromacs_copilot\n"
+        'echo "=== Running gmx_copilot"\n\n'
+        f"{cmd}\n"
+    )
 
     with open(slurm_script, "w") as f:
-        f.write(f"""#!/bin/bash
-        #SBATCH -N 1
-        #SBATCH -p GPU-shared
-        #SBATCH -t 24:00:00
-        #SBATCH --gres=gpu:1
-        #SBATCH --job-name=gmx_copilot
-        #SBATCH --output={log_file}
-        #SBATCH --error={err_file}
-
-        source ~/.bashrc
-        conda activate gromacs_env
-        {cmd}
-        """)
+        f.write(script_text)
+    print(f"SLURM script written to {slurm_script}")
 
     p = subprocess.Popen(["sbatch", slurm_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, err = p.communicate()
@@ -63,7 +83,6 @@ def run_gromacs_copilot(
     output_str = output.decode("utf-8")
     print(output_str)
     job_id = output_str.strip().split()[-1]
-
 
     # Wait for job to complete
     print(f"Submitted job {job_id}. Waiting for it to complete...")
@@ -79,15 +98,12 @@ def run_gromacs_copilot(
     # Collect and return outputs
     with open(log_file, "r") as f:
         logs = f.read()
-    with open(err_file, "r") as f:
-        errors = f.read()
-
 
     return f"Job {job_id} completed.\n\nLog Output:\n{logs}\n\nErrors:\n{errors}"
 
 @mcp.tool()
 def visualize_latest_gromacs_output(
-    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")]= "/ocean/projects/cis240137p/eshen3/gromacs_copilot/md_workspace"
+    workspace: Annotated[str, Field(description="Workspace containing GROMACS Copilot outputs")]= "/jet/home/eshen3/gromacs_copilot/md_workspace"
     ) -> str:
     """
     Automatically finds the latest GROMACS Copilot output and visualizes it.
@@ -144,7 +160,6 @@ def visualize_latest_gromacs_output(
     # Find pdb file name
     pdb_files = glob.glob(os.path.join(workspace, "*.pdb"))
     return f"Visualization complete for {os.path.basename(pdb_files[0])}. RMSD and RMSF plots saved to workspace if available."
-
 
 if __name__ == "__main__":
     # Initialize and run the server
