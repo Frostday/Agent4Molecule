@@ -12,7 +12,7 @@ Suggestions for running the enzyme generation pipeline:
 - If the keywords are not able to find any enzyme category with high match count, try using more flexible keywords (synonyms, break words, etc.) or ask the user for more information
 - The mined motifs sometimes only differ in their coordinates, try to extract the motifs one at a time and only moving on if the previous one did not generate any good results downstream, like low binding affinity with the substrate
 If the user asks for running a simulation system, use the gromacs copilot tool and directly figure out the prompt from the user request. If the user request misses any parameters, use the default ones without asking them.
-If the user asks for docking and gives pdb files, use meeko to prepare receptor and ligand files first and then run vina. If the user request misses any parameters, use the default ones without asking them.
+If the user asks for running a docking and provide ligand and receptor files, use the docking pipeline. Infer receptor name and ligand names based on the provided file names. If the user request misses any parameters, use the default ones without asking them.
 
 User request: {query}
 """

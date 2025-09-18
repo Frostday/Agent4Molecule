@@ -55,4 +55,8 @@ Design a heme binding protein using the given data: \\n- Input PDB with protein 
 ### Gromacs prompt
 
 Run an MD simulation system for 1pga_protein.pdb in the md_workspace. Use the default values for model, API key, API URL, mode, model and workspace.
-                
+
+
+### Docking
+
+Run a docking using ligand 1iep_ligand.sdf and receptor 1iep_receptorH.pdb in work directory /ocean/projects/cis240137p/eshen3/docking. Use the default values for all other parameters if not provided.
