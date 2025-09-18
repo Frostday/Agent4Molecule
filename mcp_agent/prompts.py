@@ -9,7 +9,7 @@ At any step, if the model does not meet the required criteria (e.g., SASA, RMSD,
 Do not continue the pipeline with number of good structure(s) being 0 (try making thresholds more flexible if required).
 
 Suggestions for running the enzyme generation pipeline:
-- If the keywords are not able to find any enzyme category with high match count, try using more flexible keywords or ask the user for more information
+- If the keywords are not able to find any enzyme category with high match count, try using more flexible keywords (synonyms, break words, etc.) or ask the user for more information
 - The mined motifs sometimes only differ in their coordinates, try to extract the motifs one at a time and only moving on if the previous one did not generate any good results downstream, like low binding affinity with the substrate
 
 User request: {query}
