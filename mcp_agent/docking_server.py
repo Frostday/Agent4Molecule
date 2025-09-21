@@ -19,18 +19,18 @@ def _conda_run(argv: list[str], cwd: str | None = None) -> subprocess.CompletedP
         cwd=cwd,
     )
 
-def _log(workspace: str, name: str, proc: subprocess.CompletedProcess) -> None:
-    """Persist child logs to a file (never print to stdout)."""
-    try:
-        os.makedirs(workspace, exist_ok=True)
-        with open(os.path.join(workspace, f"{name}.log"), "a") as f:
-            if proc.stdout:
-                f.write(proc.stdout)
-            if proc.stderr:
-                f.write(proc.stderr)
-    except Exception:
-        # last resort: send to stderr, not stdout
-        print(f"[warn] failed to write {name}.log", file=sys.stderr)
+# def _log(workspace: str, name: str, proc: subprocess.CompletedProcess) -> None:
+#     """Persist child logs to a file (never print to stdout)."""
+#     try:
+#         os.makedirs(workspace, exist_ok=True)
+#         with open(os.path.join(workspace, f"{name}.log"), "a") as f:
+#             if proc.stdout:
+#                 f.write(proc.stdout)
+#             if proc.stderr:
+#                 f.write(proc.stderr)
+#     except Exception:
+#         # last resort: send to stderr, not stdout
+#         print(f"[warn] failed to write {name}.log", file=sys.stderr)
 
 # @mcp.tool()
 # def prepare_receptor(
@@ -129,9 +129,164 @@ def _log(workspace: str, name: str, proc: subprocess.CompletedProcess) -> None:
 #     return "Successfully finished task."
 
 @mcp.tool()
+def smiles_to_pdb(
+    smiles: Annotated[str, Field(description="SMILES string of the molecule to convert")],
+    output_file: Annotated[str, Field(description="Path to the output PDB file")] = "smiles_output.pdb",
+    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
+) -> str:
+    """
+    Converts a SMILES string to a PDB file using Open Babel.
+    """
+
+    output_path = os.path.join(workspace, output_file)
+
+    cmd = [
+        "obabel",
+        f"-:{smiles}",
+        "-O", output_path,
+        "--gen3d"
+    ]
+
+    _conda_run(cmd, cwd=workspace)
+
+    return output_path
+
+@mcp.tool()
+def sdf_to_pdb(
+    sdf_file: Annotated[str, Field(description="Path to the input SDF file")] = "substrate.sdf",
+    output_file: Annotated[str, Field(description="Path to the output PDB file")] = "sdf_output.pdb",
+    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
+) -> str:
+    """
+    Converts an SDF file to a PDB file using Open Babel.
+    """
+
+    sdf_path = os.path.join(workspace, sdf_file)
+    output_path = os.path.join(workspace, output_file)
+
+    cmd = [
+        "obabel",
+        sdf_path,
+        "-O", output_path,
+        "--gen3d"
+    ]
+
+    _conda_run(cmd, cwd=workspace)
+
+    return output_path
+
+@mcp.tool()
+def mol_to_pdb(
+    mol_file: Annotated[str, Field(description="Path to the input MOL file")] = "substrate.mol",
+    output_file: Annotated[str, Field(description="Path to the output PDB file")] = "mol_output.pdb",
+    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
+) -> str:
+    """
+    Converts a MOL file to a PDB file using Open Babel.
+    """
+
+    mol_path = os.path.join(workspace, mol_file)
+    output_path = os.path.join(workspace, output_file)
+
+    cmd = [
+        "obabel",
+        mol_path,
+        "-O", output_path,
+        "--gen3d"
+    ]
+
+    _conda_run(cmd, cwd=workspace)
+
+    return output_path
+
+@mcp.tool()
+def smiles_to_sdf(
+    smiles: Annotated[str, Field(description="SMILES string of the molecule to convert")],
+    output_file: Annotated[str, Field(description="Path to the output SDF file")] = "smiles_output.sdf",
+    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
+) -> str:
+    """
+    Converts a SMILES string to an SDF file using RDKit.
+    """
+
+    output_path = os.path.join(workspace, output_file)
+
+    cmd = [
+        "python", "/jet/home/eshen3/Agent4Molecule/mcp_agent/util/to_sdf.py",
+        "--smiles", smiles,
+        "--out", output_path,
+    ]
+
+    _conda_run(cmd, cwd=workspace)
+    
+    return output_path
+
+@mcp.tool()
+def mol_to_sdf(
+    mol_file: Annotated[str, Field(description="Path to the input MOL file")] = "substrate.mol",
+    output_file: Annotated[str, Field(description="Path to the output SDF file")] = "mol_output.sdf",
+    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
+) -> str:
+    """
+    Converts a MOL file to an SDF file using Open Babel.
+    """
+
+    mol_path = os.path.join(workspace, mol_file)
+    output_path = os.path.join(workspace, output_file)
+
+    cmd = [
+        "python", "/jet/home/eshen3/Agent4Molecule/mcp_agent/util/to_sdf.py",
+        "--infile", mol_path,
+        "--out", output_path,
+        "--no-gen3d"
+    ]
+
+    _conda_run(cmd, cwd=workspace)
+
+    return output_path
+
+@mcp.tool()
+def pdb_to_sdf(
+    pdb_file: Annotated[str, Field(description="Path to the input PDB file")] = "substrate.pdb",
+    output_file: Annotated[str, Field(description="Path to the output SDF file")] = "pdb_output.sdf",
+    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
+) -> str:
+    """
+    Converts a PDB file to an SDF file using Open Babel.
+    """
+
+    pdb_path = os.path.join(workspace, pdb_file)
+    tmp_sdf_path = os.path.join(workspace, "tmp_" + output_file)
+    output_path = os.path.join(workspace, output_file)
+
+    # use obabel to convert pdb to sdf
+    obabel_cmd = [
+        "obabel",
+        pdb_path,
+        "-O", tmp_sdf_path,
+        "-h"
+    ]
+
+    _conda_run(obabel_cmd, cwd=workspace)
+
+    # clean single fragment
+    clean_cmd = [
+        "python", "/jet/home/eshen3/Agent4Molecule/mcp_agent/util/clean_fragment.py",
+        tmp_sdf_path, output_path
+    ]
+
+    _conda_run(clean_cmd, cwd=workspace)
+
+    # remove temporary file
+    os.remove(tmp_sdf_path)
+
+    return output_path
+
+
+@mcp.tool()
 def dock_pipeline(
     receptor_file: Annotated[str, Field(description="Path to the receptor PDB file")],
-    ligand_file: Annotated[str, Field(description="Path to the ligand PDB file")],
+    ligand_file: Annotated[str, Field(description="Path to the ligand SDF file")],
     prepared_receptor_name: Annotated[str, Field(description="Name of the output receptor PDBQT file without extension")] = "receptor_output",
     prepared_ligand_name: Annotated[str, Field(description="Name of the output ligand PDBQT file without extension")] = "ligand_output",
     workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
