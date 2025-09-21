@@ -11,7 +11,19 @@
 - PDB file = "5cxl.A" 
 - Recommended length = 20  -->
 
-2. Design an enzyme that functions as an adenylate-processing protein, acting like a cyclase to transform ATP into 3’,5’-cyclic AMP while releasing pyrophosphate. The enzyme should resemble known adenylylcyclases in structure and activity, and be capable of catalyzing the formation of cyclic AMP as a signaling molecule.
+1. Design an enzyme that functions as an adenylate-processing protein, acting like a cyclase to transform ATP into 3’,5’-cyclic AMP while releasing pyrophosphate. The enzyme should resemble known adenylylcyclases in structure and activity, and be capable of catalyzing the formation of cyclic AMP as a signaling molecule.
+
+2. Design a novel adenylate cyclase enzyme molecule that catalyzes the ATP diphosphate-lyase (cyclizing) reaction, converting ATP into 3’,5’-cyclic AMP. The structure should resemble natural adenylylcyclases while maintaining efficient 3’,5’-cyclic AMP synthetase activity.
+
+3. Construct the molecular blueprint of an adenyl cyclase protein capable of acting as a 3’,5’-cyclic AMP synthetase. The enzyme must carry out the ATP diphosphate-lyase (cyclizing) step, producing 3’,5’-cyclic AMP from ATP in a manner similar to known adenylylcyclases.
+
+4. Generate an engineered adenylylcyclase enzyme molecule optimized for strong signaling output. It should catalyze ATP conversion into 3’,5’-cyclic AMP via its ATP diphosphate-lyase (cyclizing) function and demonstrate features characteristic of natural adenylate cyclases.
+
+5. Propose the design of a synthetic adenyl cyclase protein molecule that mimics a 3’,5’-cyclic AMP synthetase. The enzyme should efficiently transform ATP into 3’,5’-cyclic AMP while operating through an ATP diphosphate-lyase (cyclizing) mechanism consistent with canonical adenylylcyclases.
+
+6. Imagine a new-to-nature adenylate cyclase enzyme molecule. Describe its structural domains and active site required to catalyze the ATP diphosphate-lyase (cyclizing) reaction, producing 3’,5’-cyclic AMP as a signaling metabolite, comparable to traditional adenylylcyclase enzymes.
+
+7. Create an artificial adenylylcyclase protein molecule designed to act as a 3’,5’-cyclic AMP synthetase. This enzyme should carry out the adenyl cyclase reaction, converting ATP into 3’,5’-cyclic AMP by the ATP diphosphate-lyase (cyclizing) pathway.
 
 ### Prompt for heme binder:
 
