@@ -1,7 +1,7 @@
 # Agent4Molecule
 
 
-## Frontend setup and executiion instructions
+## Frontend setup and execution instructions
   1. Have streamlit and py3dmol installed (pip install streamlit py3dmol).
   2. Set up a chat_history/ folder in frontend/ . This will contain all the local chat sessions with the agent
   3. Before running the frontend, export GEMINI_API_KEY with a gemini api key. Do not hardcode and push this token
