@@ -1,8 +1,8 @@
 # Agent4Molecule
-Capstone project
-
+Frontend streamlit app address forwarding
 # Run
 
 ```
-python client.py enzygen_server.py
+streamlit run chat_interface.py --server.port=8050 --server.address=0.0.0.0
 ```
+# Create a chat_history/ folder in fronted/ before running.
