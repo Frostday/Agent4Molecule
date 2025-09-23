@@ -1,2 +1,7 @@
 keys
 mcp_agent/__pycache__
+mcp_agent/outputs
+mcp_agent/output.log
+mcp_agent/output.err
+mcp_agent/slurm_run.sh
+mcp_agent/data
