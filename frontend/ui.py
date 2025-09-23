@@ -2,31 +2,60 @@
 import json
 import os
 from typing import List
+import py3Dmol
 
 import streamlit as st
 from dotenv import load_dotenv
 # from openai import AsyncOpenAI
 # from openai.lib.azure import AsyncAzureOpenAI
 from google import genai
+import base64
 from google.genai.types import GenerateContentConfig
 
 from mcp_agent_v1.prompts import SYSTEM_MESSAGE
+import chat_history_utils
+from datetime import datetime
 load_dotenv()
 
-# gpt_client = AsyncOpenAI(
-#     api_key=os.getenv("OPENAI_API_KEY")
-# )
-
-gpt_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 
 async def ui():
+    gpt_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    # if "conv_id" not in st.session_state:
+    #     d = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # st.session_state.conv_id = chat_history_utils.create_conversation(
+    #     f"EnzyGen Input Build - {d}"
+    # )
+
+    
+
+    # conv_id = st.session_state.conv_id
+    # conv_id = st.session_state.get("conv_id")
+    # if conv_id is None:
+    #     d = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #     conv_id = chat_history_utils.create_conversation(
+    #     f"EnzyGen Input Build - {d}"
+    # )
+    #     st.session_state.conv_id = conv_id
+    #     st.session_state.messages = []  # 
+    #     print("creating new conv_id",st.session_state.conv_id )
+
+   
+    # print("conv id", st.session_state.conv_id)
+
+
     if "messages" not in st.session_state:
-        st.session_state.messages = []
+        conv_file = os.path.join(chat_history_utils.HISTORY_DIR, f"{st.session_state.conv_id}.json")
+        if os.path.exists(conv_file):
+            with open(conv_file, "r") as f:
+                st.session_state.messages = json.load(f)
+        else:
+            st.session_state.messages = []
 
     for message in st.session_state.messages:
         # skip tool calls
+ 
         continue_flag = False
         for part in message.parts:
             if part.function_call: 
@@ -37,9 +66,10 @@ async def ui():
         # else:
         # with st.chat_message(message["role"]):
         final_text = " ".join([part.text for part in message.parts if part.text])
-        st.markdown(final_text)
+        with st.chat_message(message.role):
+            st.markdown(final_text)
 
-    if prompt := st.chat_input("What is up?"):
+    if prompt := st.chat_input("Ask your query here"):
         st.session_state.messages.append(  genai.types.Content( 
                 role='user',
                 parts=[
@@ -49,68 +79,93 @@ async def ui():
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        chat_history_utils.save_message(st.session_state.conv_id, "user", prompt)
         with st.spinner("Thinking..."):
      
             response, messages = await agent_loop(st.session_state.tools, gpt_client, st.session_state.messages)
             st.session_state.messages = messages
             with st.chat_message("assistant"):
                 st.markdown(response)
+                chat_history_utils.save_message(st.session_state.conv_id, "assistant",response)
 
 
 async def agent_loop(tools: dict, llm_client, messages):
 
-    # response = await st.session.list_tools()
-    # available_tools = [
-    #             genai.types.Tool(
-    #                 function_declarations=[
-    #                     {
-    #                         "name": tool.name,
-    #                         "description": tool.description,
-    #                         "parameters": {
-    #                             k: v
-    #                             for k, v in tool.inputSchema.items()
-    #                             if k not in ["additionalProperties", "$schema"]
-    #                         },
-    #                     }
-    #                 ]
-    #             )
-    #             for tool in st.session_state.tools
-    #         ]
-    
-    # print("tools",available_tools)
-    available_tools = [t['google_syntax'] for t in tools]
-    first_response = llm_client.models.generate_content(
-        model="gemini-2.0-flash", contents= messages,  
-        config= GenerateContentConfig(
-            tools= available_tools
-        ),)
-    
 
-    messages.append(first_response.candidates[0].content)
-    print("down here",first_response)
-    for part in first_response.candidates[0].content.parts:
-        if part.function_call:
-            print(part)
-            tool_id = part.function_call.id
-            tool_name = part.function_call.name
-            tool_args = part.function_call.args
-            print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
-            tool_result = await tools[tool_name]["callable"](tool_args)
-            print("tool_result",tool_result)
-            flag = False
-            messages.append(
+   
+    available_tools = [tools[t]['google_syntax'] for t in tools]
+
+    final_tool_result = ""
+    tool_result = ""
+    while True:
+        first_response = llm_client.models.generate_content(
+            model="gemini-2.0-flash", contents= messages,  
+        config= GenerateContentConfig(
+                tools= available_tools
+            ),)
+    
+        # print(first_response.candidates[0].content)
+        messages.append(first_response.candidates[0].content)
+        flag = True
+        for part in first_response.candidates[0].content.parts:
+            if part.function_call:
+           
+                tool_id = part.function_call.id
+                tool_name = part.function_call.name
+                tool_args = part.function_call.args
+                # print(f"\n[Calling tool {tool_name} with args: {tool_args}]")
+                tool_result = await tools[tool_name]["callable"](**tool_args)
+                tool_result = json.loads(tool_result)
+                # print("tool_result",tool_result)
+        
+                flag = False
+                messages.append(
                         genai.types.Content(
                             role='tool',
                             parts=[
                                 genai.types.Part.from_function_response(
                                     name=tool_name,
-                                    response={"result": str(tool_result.content[0].text)}
+                                    response={"result": str(tool_result)}
                                 )
                             ]
                         )
                     )
-    
+            
 
+                with st.chat_message("assistant"):
+                    tool_text = f"""Using tool:```{tool_name}({tool_args})```to answer this question."""
+                    st.markdown(tool_text)
+                    chat_history_utils.save_message(st.session_state.conv_id, "assistant",tool_text)
+
+
+                # print('new', type(tool_result))
+                with st.chat_message("assistant"):
+                    if tool_result["visualize"] == True:
+                            chat_history_utils.save_message(
+                            st.session_state.conv_id, 
+                            "tool", 
+                            {"visualize": True, "pdb_content": tool_result["pdb_content"]}
+                             )
+                            view = py3Dmol.view(width=800, height=600)
+                            view.addModel(tool_result["pdb_content"], "pdb")
+                            view.setStyle({}, {"sphere": {"radius": 0.3, "color":"lightblue"}})
+                            view.zoomTo()
+
+#                           # Render directly without stmol
+                            st.components.v1.html(view._make_html(), height=600, width=800)
+                        
+                    else:
+                     st.markdown("Tool response: {}".format(tool_result))
+                     chat_history_utils.save_message(st.session_state.conv_id, "tool", tool_result)
+
+            else:
+                tool_result = part.text    
+    
+        if flag: 
+            final_tool_result = tool_result
+            break
+    
+    return final_tool_result, messages
     
     # print(first_response.candidates[0].content)
 
