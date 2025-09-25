@@ -1,10 +1,20 @@
 # Agent4Molecule
 
 
-Query for running heme binder (as of now):
+## Frontend setup and execution instructions
+  1. Have streamlit and py3dmol installed (pip install streamlit py3dmol).
+  2. Set up a chat_history/ folder in frontend/ . This will contain all the local chat sessions with the agent
+  3. Before running the frontend, export GEMINI_API_KEY with a gemini api key. Do not hardcode and push this token
+  4. To run the frontend, run the following from the frontend/ folder. The port 8050 can be changed as needed.
+  ```
+  streamlit run chat_interface.py --server.port=8050 --server.address=0.0.0.0
+  ```
 
+## Run
 
-You are a scientific assistant helping to analyze protein-ligand complex diffusion simulations. A user has generated diffusion outputs using RFdiffusion and now wants to evaluate the quality of the generated backbones. Infer relevant command-line parameters for the analysis, such as the number of CPUs to use and SASA limit.
-
-
-Given the input diffusion folder of /ocean/projects/cis240137p/ksubram4/Agent4Molecule/heme_binder_diffusion/input/, perform a diffusion process wit RFDiffusionAA and analyze the output. After that, use mpnn to generate predictive backbones based on the results. Create a new workspace directory with a name of 1_diffusion. The path to the script directory is /ocean/projects/cis240137p/ksubram4/Agent4Molecule/heme_binder_diffusion/
+```
+python client.py enzygen_server.py
+python client.py heme_binder_server.py
+python client.py docking_server.py
+python client.py gromacs_server.py
+```
