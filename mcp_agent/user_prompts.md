@@ -46,4 +46,17 @@ Here are some properties you should try to obtain:
 - Radius of gyration limit for protein compactness <= 30
 - all_cst <= 1.5
 - CMS per atom >= 3.0
-- CYS atom is A15 -->
+- CYS atom is A15
+
+<!-- ----------------------------------------
+Design a heme binding protein using the given data: \\n- Input PDB with protein and ligand: "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb"\\n- Ligand name: "HBA"\\n- Parameters file: "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/theozyme/HBA/HBA.params"\\n- CST file: "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/theozyme/HBA/HBA_CYS_UPO.cst"\\n- ligand atoms that should be excluded from clashchecking because they are flexible: "O1 O2 O3 O4 C5 C10"\\n- ligand atoms that need to be more exposed and the required SASA for those atoms: "C45 C46 C47" and SASA should be 10.0\\n- amino acids should be excluded from consideration when generating protein sequences: "CM"\\n- ligand atom used for aligning the rotamers: "N1", "N2", "N3", "N4"\\nHere are some properties you should try to obtain:\\n- SASA <= 0.3\\n- RMSD <= 20\\n- LDDT >= 70\\n- Terminal residue limit < 15\\n- Radius of gyration limit for protein compactness <= 30\\n- all_cst <= 1.5\\n- CMS per atom >= 3.0\\n- CYS atom is A15
+---------------------------------------- -->
+
+### Gromacs prompt
+
+Run an MD simulation system for 1pga_protein.pdb in the md_workspace. Use the default values for model, API key, API URL, mode, model and workspace.
+
+
+### Docking
+
+Run a docking using ligand 1iep_ligand.sdf and receptor 1iep_receptorH.pdb in work directory /ocean/projects/cis240137p/eshen3/docking. Use the default values for all other parameters if not provided.

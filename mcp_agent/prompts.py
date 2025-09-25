@@ -11,6 +11,9 @@ Do not continue the pipeline with number of good structure(s) being 0 (try makin
 Suggestions for running the enzyme generation pipeline:
 - If the keywords are not able to find any enzyme category with high match count, try using more flexible keywords (synonyms, break words, etc.) or ask the user for more information
 - The mined motifs sometimes only differ in their coordinates, try to extract the motifs one at a time and only moving on if the previous one did not generate any good results downstream, like low binding affinity with the substrate
+If the user asks for running a simulation system, use the gromacs copilot tool and directly figure out the prompt from the user request. If the user request misses any parameters, use the default ones without asking them.
+If the user asks for running a docking and provide ligand and receptor files, use the docking pipeline. Ligand files need to be in .sdf format and receptor needs to be in .pdb. Infer receptor name and ligand names based on the provided file names. If the user request misses any parameters, use the default ones without asking them.
+if the user provided file format does not match the docking pipeline input, use the substrate conversion tool. Infer input format based on the provided file name. If the user request misses any parameters, use the default ones without asking them.
 
 User request: {query}
 """

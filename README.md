@@ -15,5 +15,6 @@
 ```
 python client.py enzygen_server.py
 python client.py heme_binder_server.py
+python client.py docking_server.py
+python client.py gromacs_server.py
 ```
-
