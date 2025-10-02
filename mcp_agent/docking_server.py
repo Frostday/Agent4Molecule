@@ -4,6 +4,7 @@ from mcp.server.fastmcp import FastMCP
 from typing import Annotated
 from pydantic import Field
 import subprocess
+import os
 
 mcp = FastMCP("gromacs")
 
@@ -11,7 +12,7 @@ def _conda_run(argv: list[str], cwd: str | None = None) -> subprocess.CompletedP
     """Run command inside the 'docking' conda env, CAPTURING output (no stdout leaks)."""
     conda = os.environ.get("CONDA_EXE", "conda")
     return subprocess.run(
-        [conda, "run", "-n", "docking", *argv],  # <- no --no-capture-output
+        [conda, "run", "-n", "vina", *argv],  # <- no --no-capture-output
         check=True,
         text=True,
         stdout=subprocess.PIPE,
@@ -287,21 +288,22 @@ def pdb_to_sdf(
 def dock_pipeline(
     receptor_file: Annotated[str, Field(description="Path to the receptor PDB file")],
     ligand_file: Annotated[str, Field(description="Path to the ligand SDF file")],
+    size_x: Annotated[float, Field(description="Size of the search box in the X dimension")] = 80.0,
+    size_y: Annotated[float, Field(description="Size of the search box in the Y dimension")] = 80.0,
+    size_z: Annotated[float, Field(description="Size of the search box in the Z dimension")] = 80.0,
+    center_x: Annotated[float, Field(description="X coordinate of the center of the search box")] = 0.0,
+    center_y: Annotated[float, Field(description="Y coordinate of the center of the search box")] = 0.0,
+    center_z: Annotated[float, Field(description="Z coordinate of the center of the search box")] = 0.0,
+    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
     prepared_receptor_name: Annotated[str, Field(description="Name of the output receptor PDBQT file without extension")] = "receptor_output",
     prepared_ligand_name: Annotated[str, Field(description="Name of the output ligand PDBQT file without extension")] = "ligand_output",
-    workspace: Annotated[str, Field(description="Working directory for docking files")] = "/ocean/projects/cis240137p/eshen3/docking",
-    size_x: Annotated[float, Field(description="Size of the search box in the X dimension")] = 20.0,
-    size_y: Annotated[float, Field(description="Size of the search box in the Y dimension")] = 20.0,
-    size_z: Annotated[float, Field(description="Size of the search box in the Z dimension")] = 20.0,
-    center_x: Annotated[float, Field(description="X coordinate of the center of the search box")] = 15.590,
-    center_y: Annotated[float, Field(description="Y coordinate of the center of the search box")] = 53.903,
-    center_z: Annotated[float, Field(description="Z coordinate of the center of the search box")] = 16.917,
     output_file: Annotated[str, Field(description="Path to the output docked PDBQT file")] = "docked.pdbqt",
     exhaustiveness: Annotated[int, Field(description="Exhaustiveness of the search (default is 8)")] = 8,
 ) -> str:
     """
     Docking: prepare receptor -> prepare ligand -> dock molecule
     """
+    os.makedirs(workspace, exist_ok=True)
 
     # prepare receptor
     receptor_path = os.path.join(workspace, receptor_file)
@@ -354,9 +356,20 @@ def dock_pipeline(
 
     _conda_run(vina_cmd, cwd=workspace)
 
-    return "Successfully finished task."
+    with open(os.path.join(workspace, output_file), "r") as f:
+        content = f.read()
+        content = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", content)
+    binding_affinity = content[0]
+
+    return f"Successfully finished task. Protein pdbqt file location: {os.path.join(workspace, prepared_receptor_name + ".pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(workspace, output_file)}\nBinding Affinity: {binding_affinity}"
 
 
 if __name__ == "__main__":
     # Initialize and run the server
     mcp.run(transport='stdio')
+
+    # print(dock_pipeline(
+    #     receptor_file="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/protein.pdb", 
+    #     ligand_file="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/ligand.sdf",
+    #     workspace="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/docking",
+    # ))

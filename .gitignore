@@ -7,3 +7,4 @@ mcp_agent/slurm_run.sh
 mcp_agent/data
 mcp_agent/mcp.sh
 mcp_agent/util/__pycache__
+mcp_agent/inputs

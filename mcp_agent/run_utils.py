@@ -14,9 +14,9 @@ model:
   freeze_track_motif: True
 
 contigmap:
-  contigs: ["30-110,A15-15,30-110"]
+  contigs: ["10-120,{residues},10-120"]
   inpaint_str: null
-  length: "100-140"
+  length: "100-150"
 
 potentials:
   guiding_potentials: ["type:ligand_ncontacts,weight:1"] 

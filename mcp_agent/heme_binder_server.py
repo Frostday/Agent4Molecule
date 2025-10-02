@@ -8,6 +8,7 @@ import time
 import pandas as pd
 import matplotlib.pyplot as plt
 from shutil import copy2
+import re
 
 from run_utils import extract_job_id, RF_DIFFUSION_CONFIG
 
@@ -33,16 +34,157 @@ PYTHON = {
     "diffusion": f"{CONDAPATH}/envs/diffusion/bin/python",
     "af2": f"{CONDAPATH}/envs/mlfold/bin/python",
     "proteinMPNN": f"{CONDAPATH}/envs/diffusion/bin/python",
-    "general": f"{CONDAPATH}/envs/diffusion/bin/python"
+    "general": f"{CONDAPATH}/envs/diffusion/bin/python",
+    "vina": f"{CONDAPATH}/envs/vina/bin/python"
 }
 if not os.path.exists(WDIR):
     os.makedirs(WDIR, exist_ok=True)
+PARAMS_GENERATION = "/ocean/projects/cis240137p/dgarg2/github/pyrosetta/rosetta.source.release-408/main/source/scripts/python/public/molfile_to_params.py"
+combine_protein_ligand_file = "/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/combine_protein_ligand.py"
+
+
+@mcp.tool()
+def generate_ligand_params_file(
+    sdf_file: Annotated[str, Field(description="Input sdf file (ligand)")],
+    ligand: Annotated[str, Field(description="Ligand name")],
+):
+    INPUT_DIR = f"{WDIR}/inputs"
+    os.system(f"rm {INPUT_DIR}/*")
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {sdf_file} {INPUT_DIR}/ligand.sdf")
+    os.chdir(INPUT_DIR)
+
+    command = f"obabel {INPUT_DIR}/ligand.sdf -O {INPUT_DIR}/ligand_withH.sdf -h"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    command = f"{PYTHON['diffusion']} {PARAMS_GENERATION} -n {ligand} -p {ligand} --conformers-in-one-file {INPUT_DIR}/ligand_withH.sdf"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    return f"Ligand params file generated at: {glob.glob(f'{INPUT_DIR}/*.params')[-1]}\nLigand PDB file generated at: {glob.glob(f'{INPUT_DIR}/*.pdb')[-1]}"
+
+
+@mcp.tool()
+def convert_ligand_pdb_to_sdf_for_docking(
+    pdb_path: Annotated[str, Field(description="Path to the input PDB file")]
+) -> str:
+    INPUT_DIR = f"{WDIR}/inputs"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {pdb_path} {INPUT_DIR}/ligand.pdb")
+    os.chdir(INPUT_DIR)
+    
+    obabel_cmd = f"obabel {pdb_path} -O {INPUT_DIR}/ligand_sdf.sdf -h"
+    p = subprocess.Popen(obabel_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    clean_cmd = f"{PYTHON['vina']} /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
+    p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    return f"Ligand sdf file generated at: {INPUT_DIR}/ligand_cleaned.sdf"
+
+
+@mcp.tool()
+def run_docking_pipeline(
+    receptor_path: Annotated[str, Field(description="Path to the receptor PDB file")],
+    ligand_path: Annotated[str, Field(description="Path to the ligand SDF file")],
+    size_x: Annotated[float, Field(description="Size of the search box in the X dimension")],
+    size_y: Annotated[float, Field(description="Size of the search box in the Y dimension")],
+    size_z: Annotated[float, Field(description="Size of the search box in the Z dimension")],
+    center_x: Annotated[float, Field(description="X coordinate of the center of the search box")],
+    center_y: Annotated[float, Field(description="Y coordinate of the center of the search box")],
+    center_z: Annotated[float, Field(description="Z coordinate of the center of the search box")],
+    exhaustiveness: Annotated[int, Field(description="Exhaustiveness of the search (default is 8)")] = 8,
+) -> str:
+    INPUT_DIR = f"{WDIR}/inputs"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.chdir(INPUT_DIR)
+
+    conda = os.environ.get("CONDA_EXE", "conda")
+    prefix = [conda, "run", "-n", "vina"]
+    cfg = "receptor_output.box.txt"
+
+    # prepare receptor
+    receptor_cmd = prefix + [
+        "mk_prepare_receptor.py",
+        "-i", receptor_path,
+        "-o", "receptor_output",
+        "-p",
+        "-v",
+        "--box_size", str(size_x), str(size_y), str(size_z),
+        "--box_center", str(center_x), str(center_y), str(center_z),
+    ]
+    print(" ".join(receptor_cmd))
+    p = subprocess.Popen(receptor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    print(output, err)
+
+    # prepare ligand
+    ligand_cmd = ["obabel", "-isdf", ligand_path, "-opdbqt", "-O", "ligand_output.pdbqt"]
+    print(" ".join(ligand_cmd))
+    p = subprocess.Popen(ligand_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    print(output, err)
+
+    # dock molecule
+    vina_cmd = prefix + [
+        "vina",
+        "--receptor", "receptor_output.pdbqt",
+        "--ligand", "ligand_output.pdbqt",
+        "--config", cfg,
+        "--out", "docked.pdbqt",
+        "--exhaustiveness", str(exhaustiveness),
+    ]
+    print(" ".join(vina_cmd))
+    p = subprocess.Popen(vina_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    print(output, err)
+    with open("docked.pdbqt", "r") as f:
+        content = f.read()
+        content = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", content)
+    binding_affinity = content[0]
+
+    return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}"
+
+
+@mcp.tool()
+def docked_protein_ligand_complex(
+    receptor_pdbqt_path: Annotated[str, Field(description="Receptor pdbqt file")],
+    ligand_pdbqt_path: Annotated[str, Field(description="Docked ligand pdbqt file")],
+) -> str:
+    INPUT_DIR = f"{WDIR}/inputs"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {receptor_pdbqt_path} {INPUT_DIR}/receptor.pdbqt")
+    os.system(f"cp {ligand_pdbqt_path} {INPUT_DIR}/ligand.pdbqt")
+    os.chdir(INPUT_DIR)
+
+    command = f"{PYTHON["diffusion"]} {combine_protein_ligand_file} -r {INPUT_DIR}/receptor.pdbqt -l {INPUT_DIR}/ligand.pdbqt -o {INPUT_DIR}/protein_ligand_complex.pdbqt"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    command = f"obabel {INPUT_DIR}/protein_ligand_complex.pdbqt -O {INPUT_DIR}/protein_ligand_complex.pdb"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    
+    return f"Docked protein-ligand pdb file generated at: {INPUT_DIR}/protein_ligand_complex.pdb"
+
+
+# @mcp.tool()
+# def generate_cst_file(
+#     ligand_atoms: Annotated("Ligand atoms that interact with the protein"),
+#     ligand: Annotated("Ligand name"),
+#     protein_atoms: Annotated("Protein atoms that interact with the ligand"),
+#     protein_residues: Annotated("Protein residues that interact with the ligand"),
+#     constraints
+# ) -> str:
 
 
 @mcp.tool()
 def run_rf_diffusion(
     input_pdb: Annotated[str, Field(description="Input PDB file")],
     ligand: Annotated[str, Field(description="Ligand name")],
+    interacting_residues: Annotated[str, Field(description="Interacting residues, example if interacting residue is only A15, then A15-15, otherwise if they are A15, A16, A17, then A15-17")],
     N_designs: Annotated[int, Field(description="Number of designs to generate")] = 5,
     T_steps: Annotated[int, Field(description="Number of diffusion steps")] = 200,
     job_time: Annotated[str, Field(description="Time limit for diffusion jobs (estimated time is 3.5 * T_steps * N_design seconds)")] = "1:00:00"
@@ -54,7 +196,8 @@ def run_rf_diffusion(
     config = RF_DIFFUSION_CONFIG.format(
         T_steps=T_steps,
         N_designs=N_designs,
-        LIGAND=ligand
+        LIGAND=ligand,
+        residues=interacting_residues
     )
     # estimated_time = 3.5 * T_steps * N_designs
     # print(f"Estimated time to produce {N_designs} designs = {estimated_time/60:.0f} minutes")
@@ -127,15 +270,15 @@ def analyze_rf_diffusion_outputs(
     diffusion_outputs: Annotated[list[str], Field(description="List of diffusion output files")],
     ref_pdb: Annotated[str, Field(description="Reference PDB file (same as input PDB file)")],
     params: Annotated[list[str], Field(description="Rosetta params file(s) paths")],
-    term_limit: Annotated[float, Field(description="Terminal residue limit")] = None,
-    SASA_limit: Annotated[float, Field(description="Solvent accessible surface area limit")] = None,
-    loop_limit: Annotated[float, Field(description="Maximum fraction of backbone that can be in loop conformation")] = None,
-    longest_helix: Annotated[int, Field(description="Maximum length of helices")] = None,
-    rog: Annotated[float, Field(description="Radius of gyration limit for protein compactness")] = None,
     ref_catres: Annotated[str, Field(description="Position of CYS in diffusion input")] = None,
-    exclude_clash_atoms: Annotated[str, Field(description="Ligand atoms excluded from clashchecking because they are flexible")] = None,
-    ligand_exposed_atoms: Annotated[str, Field(description="Ligand atoms that need to be more exposed")] = None,
-    exposed_atom_SASA: Annotated[float, Field(description="Minimum absolute SASA for exposed ligand atoms")] = None,
+    term_limit: Annotated[float, Field(description="Cutoff for how close protein termini can be to the ligand")] = 15.0,
+    SASA_limit: Annotated[float, Field(description="Cutoff for ligand relative SASA")] = 0.2,
+    loop_limit: Annotated[float, Field(description="Cutoff for maximum allowed loop content")] = 0.3,
+    longest_helix: Annotated[int, Field(description="Longest allowed helix length in AA's")] = 30,
+    rog: Annotated[float, Field(description="Largest allowed radius of gyration")] = 30.0,
+    exclude_clash_atoms: Annotated[str, Field(description="Ligand atom names that will be excluded from ligand clashchecking. Can be used for very flexible ligand parts")] = None,
+    ligand_exposed_atoms: Annotated[str, Field(description="Ligand atoms that need to have SASA above cutoff defined with --exposed_atom_SASA. Used for selecting models where part of a ligand needs to be solvent-accessible")] = None,
+    exposed_atom_SASA: Annotated[float, Field(description="Relative SASA cutoff for ligand atoms defined with ligand_exposed_atoms. Reasonable starting value would be 10.0, and then optimize from there")] = None,
     job_time: Annotated[str, Field(description="Time limit for diffusion jobs")] = "1:00:00"
 ) -> str:
     DIFFUSION_DIR = f"{WDIR}/0_diffusion"
@@ -167,9 +310,8 @@ def analyze_rf_diffusion_outputs(
         dif_analysis_cmd_dict["--ref_catres"] = ref_catres
     if exclude_clash_atoms is not None:
         dif_analysis_cmd_dict["--exclude_clash_atoms"] = exclude_clash_atoms
-    if ligand_exposed_atoms is not None:
+    if ligand_exposed_atoms is not None and exposed_atom_SASA is not None:
         dif_analysis_cmd_dict["--ligand_exposed_atoms"] = ligand_exposed_atoms
-    if exposed_atom_SASA is not None:
         dif_analysis_cmd_dict["--exposed_atom_SASA"] = str(exposed_atom_SASA)
     if longest_helix is not None:
         dif_analysis_cmd_dict["--longest_helix"] = str(longest_helix)
@@ -406,13 +548,14 @@ def run_af2(
         structures.append(f"File: {b}\n\n" + pdb)
     with open(glob.glob(f"{AF2_DIR}/*.fasta")[0], "r") as f:
         input_sequences = f.read()
-    with open(glob.glob(f"{AF2_DIR}/*.csv")[0], "r") as f:
+    af2_csv_files = glob.glob(f"{AF2_DIR}/*.csv")
+    with open(af2_csv_files[0], "r") as f:
         af2_scores_csv = f.read()
     af2_out_files = glob.glob(f"{AF2_DIR}/*.pdb")
     
-    # return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + "\n----------\n\nInput Sequences:\n\n----------\n" + input_sequences + f"\n----------\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
-    # return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + f"\n----------\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
-    return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + "\n----------\n\nInput Sequences:\n\n----------\n" + input_sequences + f"\n----------\n\nAF2 Scores CSVs: {af2_csv_files}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    # return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\n----------\n" + "\n----------\n----------\n".join(structures) + f"\n----------\n\nAF2 Scores CSVs: {af2_csv_files}\nExample:\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\nAF2 Scores CSVs: {af2_csv_files}\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -509,13 +652,15 @@ def analyze_af2_outputs(
         return f"Error: No good models to continue this pipeline with\n\nCSV File:\n\n----------\n{scores_af2.to_csv(index=False)}\n----------\n\nLogs:\n\n----------\n" + logs + "\n----------\n\nErrors:\n\n----------\n" + errors + "\n----------\n"
 
     if after_ligand_mpnn:
-        return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered output files: {glob.glob(f"{AF2_DIR}/good/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n"
+        af2_good_files = glob.glob(f"{AF2_DIR}/good/*.pdb")
+        return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered output files: {af2_good_files}\n\nAF2 Scores Distribution Plot: {img_path}\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n"
 
     os.chdir(f"{AF2_DIR}/good")
+    ref_pdb_files = glob.glob(f"{ref_pdbs_path}/*.pdb")
     align_cmd = f"{PYTHON['general']} {SCRIPT_DIR}/scripts/utils/place_ligand_after_af2.py "\
                 f"--outdir with_heme2 --params {' '.join(params)} --fix_catres "\
                 f"--pdb {' '.join(good_af2_models)} "\
-                f"--ref {' '.join(glob.glob(f"{ref_pdbs_path}/*.pdb"))}"
+                f"--ref {' '.join(ref_pdb_files)}"
     p = subprocess.Popen(align_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (alignment_logs, alignment_errors) = p.communicate()
 
@@ -527,7 +672,8 @@ def analyze_af2_outputs(
 
     # return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered output files: {good_af2_models}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\n----------\n" + "\n----------\n----------\n".join(final_output) + "\n----------\n\nCSV File:\n\n----------\n" + scores_af2.to_csv(index=False) + "\n----------\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
     # return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered output files: {good_af2_models}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\nCSV File:\n\n----------\n" + scores_af2.to_csv(index=False) + "\n----------\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
-    return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered and aligned output files: {glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")}\n\nAF2 Scores Distribution Plot: {img_path}\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
+    af2_aligned_files = glob.glob(f"{AF2_DIR}/good/with_heme2/*.pdb")
+    return f"AF2 Designs Filtered\nNumber of good structure(s): {len(good_af2_models)}\nAF2 analysis filtered and aligned output files: {af2_aligned_files}\n\nAF2 Scores Distribution Plot: {img_path}\n\nFiltered CSV File:\n\n----------\n" + scores_af2_filtered.to_csv(index=False) + "\n----------\n\nAF2 Analysis Log File:\n\n----------\n" + logs + "\n----------\n\nAF2 Analysis Error File:\n\n----------\n" + errors + "\n----------\n\nAlignment Log File:\n\n----------\n" + alignment_logs.decode('utf-8') + "\n----------\n\nAlignment Error File:\n\n----------\n" + alignment_errors.decode('utf-8') + "\n----------\n"
 
 
 @mcp.tool()
@@ -641,7 +787,8 @@ def analyze_ligand_mpnn_outputs(
 
     # return f"Ligand MPNN Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
     # return f"Ligand MPNN Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n\nOriginal Score File ({scores_file}):\n\n----------\n{scores.to_csv(index=False)}\n----------\n"
-    return f"Ligand MPNN Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n"
+    ligmpnn_good_files = glob.glob(f"{DESIGN_DIR_ligMPNN}/good/*.pdb")
+    return f"Ligand MPNN Designs Filtered\nNumber of good structure(s): {len(filtered_scores)}\nAll output files: {ligmpnn_good_files}\n\nFiltered Score File:\n\n----------\n{filtered_scores.to_csv(index=False)}\n----------\n"
 
 
 @mcp.tool()
@@ -868,6 +1015,35 @@ def cleanup():
 
 if __name__ == "__main__":
     mcp.run(transport='stdio')
+
+    # output = generate_ligand_params_file(
+    #     sdf_file="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/ligand.sdf",
+    #     ligand="HBA"
+    # )
+    # print(output)
+
+    # output = convert_ligand_pdb_to_sdf_for_docking(
+    #     pdb_path="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output/inputs/HBA.pdb"
+    # )
+    # print(output)
+
+    # output = run_docking_pipeline(
+    #     receptor_path="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/protein.pdb",
+    #     ligand_path="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output/inputs/ligand_cleaned.sdf",
+    #     size_x=40.0,
+    #     size_y=40.0,
+    #     size_z=40.0,
+    #     center_x=-10.0,
+    #     center_y=-32.0,
+    #     center_z=10.0,
+    # )
+    # print(output)
+
+    # output = docked_protein_ligand_complex(
+    #     receptor_pdbqt_path="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output/inputs/receptor_output.pdbqt",
+    #     ligand_pdbqt_path="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output/inputs/docked.pdbqt",
+    # )
+    # print(output)
 
     # cleanup()
 
