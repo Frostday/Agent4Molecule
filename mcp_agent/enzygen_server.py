@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import glob
 import random
+import re
 
 from run_utils import extract_job_id
 
@@ -15,27 +16,14 @@ ENZYGEN_PATH = "/ocean/projects/cis240137p/dgarg2/github/EnzyGen/"
 ENZYGEN_CONDA_ENV = "/ocean/projects/cis240137p/dgarg2/miniconda3/envs/enzygen/bin/python"
 COLABFOLD_CACHE = "/ocean/projects/cis240137p/dgarg2/github/colabfold/cf_cache"
 COLABFOLD_SIF = "/ocean/projects/cis240137p/dgarg2/github/colabfold/colabfold_1.5.5-cuda12.2.2.sif"
+combine_protein_ligand_file = "/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/combine_protein_ligand.py"
+PYTHON = {"diffusion": f"/ocean/projects/cis240137p/dgarg2/miniconda3/envs/diffusion/bin/python", "vina": f"/ocean/projects/cis240137p/dgarg2/miniconda3/envs/vina/bin/python"}
 import sys
 sys.path.append(ENZYGEN_PATH)
 
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("enzygen")
-
-# AF2 setup
-CONDAPATH = "/ocean/projects/cis240137p/dgarg2/miniconda3"
-HEME_BINDER_PATH = "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/"
-SCRIPT_DIR = os.path.dirname(HEME_BINDER_PATH)
-AF2_script = f"{SCRIPT_DIR}/scripts/af2/af2.py"
-PYTHON = {
-    "diffusion": f"{CONDAPATH}/envs/diffusion/bin/python",
-    "af2": f"{CONDAPATH}/envs/mlfold/bin/python",
-    "proteinMPNN": f"{CONDAPATH}/envs/diffusion/bin/python",
-    "general": f"{CONDAPATH}/envs/diffusion/bin/python"
-}
-sys.path.append(HEME_BINDER_PATH)
-sys.path.append(SCRIPT_DIR+"/scripts/utils")
-import utils
 
 
 @mcp.tool()
@@ -76,6 +64,15 @@ def find_mined_motifs_enzyme_category(
         options.append(text)
     return f"Total motif options: {len(data)}\n\nHere are some mined motifs for the enzyme family {enzyme_category}:\n\n" + "\n".join(options)
 
+
+# @mcp.tool()
+# def change_specific_residues(
+#     pdb: Annotated[str, Field(description="PDB file")],
+#     start_residue: Annotated[int, Field(description="Start residue is inclusive")],
+#     end_residue: Annotated[int, Field(description="End residue is inclusive")],
+# ) -> str:
+#     return ""
+    
 
 @mcp.tool()
 def build_enzygen_input(
@@ -166,73 +163,6 @@ def run_enzygen(input_json: Annotated[str, Field(description="Location of script
     return f"EnzyGen Finished Successfully\nPredicted sequence from EnzyGen: {glob.glob(f"{ENZYGEN_PATH}/outputs/*/protein.txt")[0]}\nPredicted structure from EnzyGen: {glob.glob(f"{ENZYGEN_PATH}/outputs/*/pred_pdbs/*.pdb")[0]}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
-# @mcp.tool()
-# def run_af2_on_enzygen_output(
-#     sequence_file: Annotated[str, Field(description="Location of enzygen sequence file (protein.txt from enzygen)")],
-#     AF2_recycles: Annotated[int, Field(description="Number of AF2 recycling steps")] = 3,
-#     AF2_models: Annotated[str, Field(description="Number of AF2 models (default is '4', add other models to this string if needed, i.e. '3 4 5')")] = "4",
-#     job_time: Annotated[str, Field(description="Time limit for AF2 jobs")] = "1:00:00",
-# ):
-#     AF2_DIR = f"{ENZYGEN_PATH}/af2_outputs/"
-#     os.makedirs(AF2_DIR, exist_ok=True)
-#     os.chdir(AF2_DIR)
-#     os.system(f"rm -rf {AF2_DIR}/*")
-    
-#     with open(sequence_file, "r") as f:
-#         sequence = f.read()
-#     with open("input_seq.fasta", "w") as f:
-#         f.write(">enzygen\n" + sequence)
-    
-#     cmds_filename_af2 = "commands_af2"
-#     with open(cmds_filename_af2, "w") as file:
-#         command = f"{PYTHON['af2']} {AF2_script} --af-nrecycles {AF2_recycles} --af-models {AF2_models} --fasta input_seq.fasta --scorefile scores.csv\n"
-#         file.write(command)
-
-#     submit_script = "submit_af2.sh"
-#     utils.create_slurm_submit_script(
-#         filename=submit_script, 
-#         N_cores=2, 
-#         time=job_time, 
-#         array=1,
-#         array_commandfile=cmds_filename_af2
-#     )
-#     with open(submit_script, "r") as f:
-#         content = f.read()
-#         content = content.split("\n")
-#         content.insert(-2, "module load cuda/12.6")
-#     with open(submit_script, "w") as f:
-#         f.write("\n".join(content))
-
-#     p = subprocess.Popen(['sbatch', submit_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#     (output, err) = p.communicate()
-#     job_id = extract_job_id(output.decode('utf-8'))
-#     print("Enzygen AF2 Job ID:", job_id)
-#     while True:
-#         p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#         (output, err) = p.communicate()
-#         if job_id not in str(output):
-#             break
-#         print("Job still running...")
-#         time.sleep(60)
-
-#     with open(os.path.join(AF2_DIR, "output.log"), "r") as f:
-#         logs = f.read()
-#     with open(os.path.join(AF2_DIR, "output.err"), "r") as f:
-#         errors = f.read()
-#     structures = []
-#     for b in glob.glob(f"{AF2_DIR}/*.pdb"):
-#         with open(b, "r") as f:
-#             pdb = f.read()
-#         structures.append(f"File: {b}\n\n" + pdb)
-#     with open(glob.glob(f"{AF2_DIR}/*.fasta")[0], "r") as f:
-#         input_sequences = f.read()
-#     with open(glob.glob(f"{AF2_DIR}/*.csv")[0], "r") as f:
-#         af2_scores_csv = f.read()
-#     af2_out_files = glob.glob(f"{AF2_DIR}/*.pdb")
-
-#     return f"AF2 Job Completed\nAll output files: {af2_out_files}\n\nAF2 Scores CSVs: {glob.glob(f"{AF2_DIR}/*.csv")}\n\n----------\n" + af2_scores_csv + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
-
-
 @mcp.tool()
 def run_colabfold_on_enzygen_output(
     sequence_file: Annotated[str, Field(description="Location of enzygen sequence file (protein.txt from enzygen)")],
@@ -284,6 +214,116 @@ def run_colabfold_on_enzygen_output(
     return f"Colabfold Job Completed\nAll output files: {protein_pdbs}\nAll plddt scores: {plddt_scores}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
+@mcp.tool()
+def convert_ligand_pdb_to_sdf_for_docking(
+    pdb_path: Annotated[str, Field(description="Path to the input PDB file")]
+) -> str:
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {pdb_path} {INPUT_DIR}/ligand.pdb")
+    os.chdir(INPUT_DIR)
+    
+    obabel_cmd = f"obabel {pdb_path} -O {INPUT_DIR}/ligand_sdf.sdf -h"
+    p = subprocess.Popen(obabel_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    clean_cmd = f"{PYTHON['vina']} /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
+    p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    return f"Ligand sdf file generated at: {INPUT_DIR}/ligand_cleaned.sdf"
+
+
+@mcp.tool()
+def run_docking_pipeline(
+    receptor_path: Annotated[str, Field(description="Path to the receptor PDB file")],
+    ligand_path: Annotated[str, Field(description="Path to the ligand SDF file")],
+    size_x: Annotated[float, Field(description="Size of the search box in the X dimension")] = 80.0,
+    size_y: Annotated[float, Field(description="Size of the search box in the Y dimension")] = 80.0,
+    size_z: Annotated[float, Field(description="Size of the search box in the Z dimension")] = 80.0,
+    center_x: Annotated[float, Field(description="X coordinate of the center of the search box")] = 0.0,
+    center_y: Annotated[float, Field(description="Y coordinate of the center of the search box")] = 0.0,
+    center_z: Annotated[float, Field(description="Z coordinate of the center of the search box")] = 0.0,
+    exhaustiveness: Annotated[int, Field(description="Exhaustiveness of the search (default is 8)")] = 8,
+) -> str:
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.chdir(INPUT_DIR)
+
+    conda = os.environ.get("CONDA_EXE", "conda")
+    prefix = [conda, "run", "-n", "vina"]
+    cfg = "receptor_output.box.txt"
+
+    # prepare receptor
+    receptor_cmd = prefix + [
+        "mk_prepare_receptor.py",
+        "-i", receptor_path,
+        "-o", "receptor_output",
+        "-p",
+        "-v",
+        "--box_size", str(size_x), str(size_y), str(size_z),
+        "--box_center", str(center_x), str(center_y), str(center_z),
+        "-a"
+    ]
+    # print(" ".join(receptor_cmd))
+    p = subprocess.Popen(receptor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    # print(output, err)
+
+    # prepare ligand
+    ligand_cmd = prefix + [
+        "mk_prepare_ligand.py",
+        "-i", ligand_path,
+        "-o", "ligand_output.pdbqt",
+    ]
+    # print(" ".join(ligand_cmd))
+    p = subprocess.Popen(ligand_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    # print(output, err)
+
+    # dock molecule
+    vina_cmd = prefix + [
+        "vina",
+        "--receptor", "receptor_output.pdbqt",
+        "--ligand", "ligand_output.pdbqt",
+        "--config", cfg,
+        "--out", "docked.pdbqt",
+        "--exhaustiveness", str(exhaustiveness),
+    ]
+    # print(" ".join(vina_cmd))
+    p = subprocess.Popen(vina_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    # print(output, err)
+    with open("docked.pdbqt", "r") as f:
+        content = f.read()
+        content = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", content)
+    binding_affinity = content[0]
+
+    return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}"
+
+
+@mcp.tool()
+def get_docked_protein_ligand_complex(
+    receptor_pdbqt_path: Annotated[str, Field(description="Receptor pdbqt file")],
+    ligand_pdbqt_path: Annotated[str, Field(description="Docked ligand pdbqt file")],
+) -> str:
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {receptor_pdbqt_path} {INPUT_DIR}/receptor.pdbqt")
+    os.system(f"cp {ligand_pdbqt_path} {INPUT_DIR}/ligand.pdbqt")
+    os.chdir(INPUT_DIR)
+
+    command = f"{PYTHON["diffusion"]} {combine_protein_ligand_file} -r {INPUT_DIR}/receptor.pdbqt -l {INPUT_DIR}/ligand.pdbqt -o {INPUT_DIR}/protein_ligand_complex.pdbqt"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    command = f"obabel {INPUT_DIR}/protein_ligand_complex.pdbqt -O {INPUT_DIR}/protein_ligand_complex.pdb"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+        
+    return f"Docked protein-ligand pdb file generated at: {INPUT_DIR}/protein_ligand_complex.pdb"
+
+
 def cleanup():
     os.system(f"rm -rf {ENZYGEN_PATH}/outputs/*")
     os.system(f"rm -rf {ENZYGEN_PATH}/af2_outputs/*")
@@ -295,7 +335,7 @@ def cleanup():
 
 
 if __name__ == "__main__":
-    mcp.run(transport='stdio')
+    # mcp.run(transport='stdio')
     
     # print(find_enzyme_category_using_keywords(["oxidase", "D-ARABINONO-1,4-LACTONE"]))
     # print(find_enzyme_category_using_keywords(["adenylate", "cyclase", "adenylylcyclase"]))
@@ -323,3 +363,18 @@ if __name__ == "__main__":
     # print(run_af2_on_enzygen_output("/ocean/projects/cis240137p/dgarg2/github/EnzyGen/outputs/3.1.1/protein.txt"))
 
     # print(run_colabfold_on_enzygen_output("/ocean/projects/cis240137p/dgarg2/github/EnzyGen/outputs/1.1.1/protein.txt"))
+
+    # print(run_docking_pipeline(
+    #     size_z=40,
+    #     center_x=0,
+    #     size_x=40,
+    #     center_y=0,
+    #     size_y=40,
+    #     center_z=0,
+    #     ligand_path="/ocean/projects/cis240137p/dgarg2/github/EnzyGen//docking/ligand_cleaned.sdf",
+    #     receptor_path="/ocean/projects/cis240137p/dgarg2/github/EnzyGen/af2_outputs/out/enzygen_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb",
+    # ))
+    # print(get_docked_protein_ligand_complex(
+    #     receptor_pdbqt_path="/ocean/projects/cis240137p/dgarg2/github/EnzyGen//docking/receptor_output.pdbqt",
+    #     ligand_pdbqt_path="/ocean/projects/cis240137p/dgarg2/github/EnzyGen//docking/docked.pdbqt",
+    # ))
