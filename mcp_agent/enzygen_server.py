@@ -299,6 +299,7 @@ def run_docking_pipeline(
         content = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", content)
     binding_affinity = content[0]
 
+    # return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}\n\nLogs:\n----\n{output.decode('utf-8')}\n----\nErrors:\n----\n{err.decode('utf-8')}\n----"
     return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}"
 
 
@@ -335,7 +336,7 @@ def cleanup():
 
 
 if __name__ == "__main__":
-    # mcp.run(transport='stdio')
+    mcp.run(transport='stdio')
     
     # print(find_enzyme_category_using_keywords(["oxidase", "D-ARABINONO-1,4-LACTONE"]))
     # print(find_enzyme_category_using_keywords(["adenylate", "cyclase", "adenylylcyclase"]))
