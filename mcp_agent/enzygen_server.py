@@ -328,6 +328,7 @@ def get_docked_protein_ligand_complex(
 def cleanup():
     os.system(f"rm -rf {ENZYGEN_PATH}/outputs/*")
     os.system(f"rm -rf {ENZYGEN_PATH}/af2_outputs/*")
+    os.system(f"rm -rf {ENZYGEN_PATH}/docking/*")
     os.system(f"rm -f {ENZYGEN_PATH}/run_enzygen.sh")
     os.system(f"rm -f {ENZYGEN_PATH}/run_gpu_slurm.sh")
     os.system(f"rm -f {ENZYGEN_PATH}/data/input.json")
