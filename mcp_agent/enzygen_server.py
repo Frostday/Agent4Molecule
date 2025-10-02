@@ -25,6 +25,14 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("enzygen")
 
+three_to_one = {
+    "ALA":"A","ARG":"R","ASN":"N","ASP":"D","CYS":"C",
+    "GLN":"Q","GLU":"E","GLY":"G","HIS":"H","ILE":"I",
+    "LEU":"L","LYS":"K","MET":"M","PHE":"F","PRO":"P",
+    "SER":"S","THR":"T","TRP":"W","TYR":"Y","VAL":"V",
+    "SEC":"U","PYL":"O","ASX":"B","GLX":"Z","XAA":"X","UNK":"X"
+}
+
 
 @mcp.tool()
 def find_enzyme_category_using_keywords(
@@ -65,14 +73,41 @@ def find_mined_motifs_enzyme_category(
     return f"Total motif options: {len(data)}\n\nHere are some mined motifs for the enzyme family {enzyme_category}:\n\n" + "\n".join(options)
 
 
-# @mcp.tool()
-# def change_specific_residues(
-#     pdb: Annotated[str, Field(description="PDB file")],
-#     start_residue: Annotated[int, Field(description="Start residue is inclusive")],
-#     end_residue: Annotated[int, Field(description="End residue is inclusive")],
-# ) -> str:
-#     return ""
-    
+@mcp.tool()
+def change_specific_residues_using_enzygen_if_required(
+    enzyme_family: Annotated[str, Field(description="Enzyme family of the enzyme to be generated (EC4 category e.g. 1.1.1.1)")],
+    pdb: Annotated[str, Field(description="AlphaFold generated PDB file")],
+    residues_to_change: Annotated[list[int], Field(description="Indices of residues to be changed (e.g. [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]) - indexing is done from 1")],
+    recommended_length: Annotated[int, Field(description="Recommended length of the enzyme to be generated (default: use same length)")] = None,
+    add_amino_acids_at_beginning: Annotated[int, Field(description="Number of new amino acids to be added at the beginning (default: 0)")] = 0,
+    add_amino_acids_at_end: Annotated[int, Field(description="Number of new amino acids to be added at the end (default: use length to determine the number of amino acids to add)")] = 0,
+    add_amino_acids_at_index: Annotated[dict, Field(description="Number of new amino acids to be added at a given index e.g. {\"2\": 10, \"100\": 20} adds 10 amino acids at index 2, 20 at index 100 (make sure to provide all keys as strings and values as integers) - indexing is done from 1\n")] = {},
+) -> str:
+    with open(pdb, "r") as f:
+        content = f.read()
+    indices = list(set([int(i) for i in re.findall(r"ATOM\s+\d+\s+\w+\s+\w+\s+\w+\s+(\d+)\s+", content)]))
+    if recommended_length is None:
+        length = len(indices)
+    else:
+        length = recommended_length
+    motif_indices = []
+    motif_seq = []
+    motif_coord = []
+    cur_index = add_amino_acids_at_beginning
+    for i in indices:
+        if str(i) in add_amino_acids_at_index.keys():
+            cur_index += add_amino_acids_at_index[str(i)]
+        if cur_index + i + add_amino_acids_at_end == length + 1:
+            break
+        if i not in residues_to_change:
+            atoms = re.findall(fr"ATOM\s+\d+\s+\w+\s+\w+\s+\w+\s+{i}\s+.*", content)
+            atoms = np.array([np.array(a.split()) for a in atoms])
+            motif_indices.append(cur_index + i-1)
+            motif_seq.append(three_to_one[atoms[0, 3]])
+            motif_coord.append(np.round(np.mean(atoms[:, 6:9].astype(float), axis=0), 3).tolist())
+    # return f"Data for enzygen:\n- Motif indices: {motif_indices}\n- Motif sequence: {motif_seq}\n- Motif coordinates: {motif_coord}\n- Recommended length: {length}"
+    return build_enzygen_input(enzyme_family=enzyme_family, motif_indices=motif_indices, motif_seq=motif_seq, motif_coord=motif_coord, recommended_length=length)
+
 
 @mcp.tool()
 def build_enzygen_input(
@@ -379,4 +414,14 @@ if __name__ == "__main__":
     # print(get_docked_protein_ligand_complex(
     #     receptor_pdbqt_path="/ocean/projects/cis240137p/dgarg2/github/EnzyGen//docking/receptor_output.pdbqt",
     #     ligand_pdbqt_path="/ocean/projects/cis240137p/dgarg2/github/EnzyGen//docking/docked.pdbqt",
+    # ))
+
+    # print(change_specific_residues_using_enzygen_if_required(
+    #     enzyme_family="4.6.1.1", 
+    #     pdb="/ocean/projects/cis240137p/dgarg2/github/EnzyGen/af2_outputs/out/enzygen_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb", 
+    #     residues_to_change=[5, 6, 7], 
+    #     recommended_length=100, 
+    #     add_amino_acids_at_beginning=2, 
+    #     add_amino_acids_at_end=0,
+    #     add_amino_acids_at_index={"1": 50, "3": 20}
     # ))

@@ -25,6 +25,14 @@
 
 7. Create an artificial adenylylcyclase protein molecule designed to act as a 3’,5’-cyclic AMP synthetase. This enzyme should carry out the adenyl cyclase reaction, converting ATP into 3’,5’-cyclic AMP by the ATP diphosphate-lyase (cyclizing) pathway. -->
 
+### Prompt for enzygen editing:
+
+1. Regenerate the full protein pdb /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/enzygen_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb (belongs to the enzyme family 4.6.1.1) by modifying residues from 1-10, from 51-60 and from 191-198
+
+2. Regenerate the full protein pdb /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/enzygen_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb (belongs to the enzyme family 4.6.1.1) by modifying residues from 20-30 and from 180-190 with length 220 (add 5 amino acids at index 51, add 5 amino acids in the beginning and the rest at the end)
+
+Note: remove enzyme family when continuing the same chat
+
 ### Prompt for heme binder:
 
 1. Design a heme binding protein using the given data: \\n- Input PDB with protein and ligand: "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb"\\n- Ligand name: "HBA"\\n- Parameters file: "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/theozyme/HBA/HBA.params"\\n- CST file: "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/theozyme/HBA/HBA_CYS_UPO.cst"\\n- ligand atoms that should be excluded from clashchecking because they are flexible: "O1 O2 O3 O4 C5 C10"\\n- ligand atoms that need to be more exposed and the required SASA for those atoms: "C45 C46 C47" and SASA should be 10.0\\n- amino acids should be excluded from consideration when generating protein sequences: "CM"\\n- ligand atom used for aligning the rotamers: "N1", "N2", "N3", "N4"\\n- Interacting residue atom is A15\\nHere are some properties you should try to obtain:\\n- SASA <= 0.3\\n- RMSD <= 5\\n- LDDT >= 80\\n- Terminal residue limit < 15\\n- Radius of gyration limit for protein compactness <= 30\\n- all_cst <= 1.5\\n- CMS per atom >= 3.0
