@@ -9,8 +9,24 @@ import numpy as np
 import glob
 import random
 import re
+import logging
+import traceback
+import sys
+from Bio import AlignIO
+from util.msa_to_motif import msa_to_enzygen_motif
 
 from run_utils import extract_job_id
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/jet/home/eshen3/Agent4Molecule/mcp_agent/enzygen_server.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 ENZYGEN_PATH = "/ocean/projects/cis240137p/dgarg2/github/EnzyGen/"
 ENZYGEN_CONDA_ENV = "/ocean/projects/cis240137p/dgarg2/miniconda3/envs/enzygen/bin/python"
@@ -33,6 +49,62 @@ three_to_one = {
     "SEC":"U","PYL":"O","ASX":"B","GLX":"Z","XAA":"X","UNK":"X"
 }
 
+@mcp.tool()
+def debug_info() -> str:
+    """
+    Get debugging information about the current environment and file system.
+    """
+    try:
+        info = []
+        info.append(f"Current working directory: {os.getcwd()}")
+        info.append(f"Python executable: {sys.executable}")
+        info.append(f"Environment PATH: {os.environ.get('PATH', 'Not found')}")
+        
+        # Check if clustalw is available
+        try:
+            result = subprocess.run(['which', 'clustalw'], capture_output=True, text=True)
+            if result.returncode == 0:
+                info.append(f"ClustalW location: {result.stdout.strip()}")
+            else:
+                info.append("ClustalW: Not found in PATH")
+        except Exception as e:
+            info.append(f"ClustalW check failed: {e}")
+        
+        # Check data directory
+        data_dir = "/jet/home/eshen3/Agent4Molecule/mcp_agent/data"
+        if os.path.exists(data_dir):
+            files = os.listdir(data_dir)
+            info.append(f"Data directory contents: {files}")
+        else:
+            info.append(f"Data directory not found: {data_dir}")
+        
+        # Check log file
+        log_file = "/jet/home/eshen3/Agent4Molecule/mcp_agent/enzygen_server.log"
+        if os.path.exists(log_file):
+            size = os.path.getsize(log_file)
+            info.append(f"Log file exists: {log_file} ({size} bytes)")
+        else:
+            info.append(f"Log file not found: {log_file}")
+        
+        return "\n".join(info)
+    
+    except Exception as e:
+        return f"Debug info failed: {str(e)}\nTraceback: {traceback.format_exc()}"
+
+# AF2 setup
+CONDAPATH = "/ocean/projects/cis240137p/dgarg2/miniconda3"
+HEME_BINDER_PATH = "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/"
+SCRIPT_DIR = os.path.dirname(HEME_BINDER_PATH)
+AF2_script = f"{SCRIPT_DIR}/scripts/af2/af2.py"
+PYTHON = {
+    "diffusion": f"{CONDAPATH}/envs/diffusion/bin/python",
+    "af2": f"{CONDAPATH}/envs/mlfold/bin/python",
+    "proteinMPNN": f"{CONDAPATH}/envs/diffusion/bin/python",
+    "general": f"{CONDAPATH}/envs/diffusion/bin/python"
+}
+sys.path.append(HEME_BINDER_PATH)
+sys.path.append(SCRIPT_DIR+"/scripts/utils")
+# import utils
 
 @mcp.tool()
 def find_enzyme_category_using_keywords(
@@ -48,30 +120,136 @@ def find_enzyme_category_using_keywords(
     return "Top 5 results:\n\n" + result.head(5).to_csv(index=False)
 
 
-@mcp.tool()
-def find_mined_motifs_enzyme_category(
-    enzyme_category: Annotated[str, Field(description="Enzyme category (e.g. 4.6.1.1)")],
-    start_index: Annotated[int, Field(description="Start index is inclusive (suggestion: only extract 2-5 at a time)")] = 0,
-    end_index: Annotated[int, Field(description="End index is exclusive (suggestion: only extract 2-5 at a time)")] = 2,
-) -> str:
-    file_path = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(file_path)
-    if end_index < start_index:
-        return "End index should be greater than start index"
-    with open("data/mined_motifs.json") as f:
-        data = json.load(f)
-    if enzyme_category not in data.keys():
-        return "No motif information available for the enzyme category - try another EC4 category or ask the user for motif information"
-    data = data[enzyme_category]
-    options = []
-    if end_index > len(data):
-        return "Number of mined motifs is less than the end index (total: {})".format(len(data))
-    for i, d in enumerate(data[start_index:end_index]):
-        text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Motif sequence: {np.array(d['seq'])[d['motif']].tolist()}\n\t- Motif coordinates: {np.array(d['coor'])[d['motif']].tolist()}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
-        # text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Sequence: {d['seq']}\n\t- Coordinates: {d['coor']}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
-        options.append(text)
-    return f"Total motif options: {len(data)}\n\nHere are some mined motifs for the enzyme family {enzyme_category}:\n\n" + "\n".join(options)
+# @mcp.tool()
+# def find_mined_motifs_enzyme_category(
+#     enzyme_category: Annotated[str, Field(description="Enzyme category (e.g. 4.6.1.1)")],
+#     start_index: Annotated[int, Field(description="Start index is inclusive (suggestion: only extract 2-5 at a time)")] = 0,
+#     end_index: Annotated[int, Field(description="End index is exclusive (suggestion: only extract 2-5 at a time)")] = 2,
+# ) -> str:
+#     file_path = os.path.dirname(os.path.abspath(__file__))
+#     os.chdir(file_path)
+#     if end_index < start_index:
+#         return "End index should be greater than start index"
+#     with open("data/mined_motifs.json") as f:
+#         data = json.load(f)
+#     if enzyme_category not in data.keys():
+#         return "No motif information available for the enzyme category - try another EC4 category or ask the user for motif information"
+#     data = data[enzyme_category]
+#     options = []
+#     if end_index > len(data):
+#         return "Number of mined motifs is less than the end index (total: {})".format(len(data))
+#     for i, d in enumerate(data[start_index:end_index]):
+#         text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Motif sequence: {np.array(d['seq'])[d['motif']].tolist()}\n\t- Motif coordinates: {np.array(d['coor'])[d['motif']].tolist()}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
+#         # text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Sequence: {d['seq']}\n\t- Coordinates: {d['coor']}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
+#         options.append(text)
+#     return f"Total motif options: {len(data)}\n\nHere are some mined motifs for the enzyme family {enzyme_category}:\n\n" + "\n".join(options)
 
+@mcp.tool()
+def mine_motifs(
+    enzyme_fastafile: Annotated[str, Field(description="Location of MSA fasta file of enzymes in the enzyme category")] = "/jet/home/eshen3/Agent4Molecule/mcp_agent/data/enzyme.fasta",
+    ref_pdb_file: Annotated[str, Field(description="Location of representative PDB file of an enzyme in the enzyme category")] = "/jet/home/eshen3/Agent4Molecule/mcp_agent/data/1U3T.pdb",
+    chain_id: Annotated[str, Field(description="Chain ID from the PDB file (e.g., 'A', 'B')")] = "A",
+    workspace: Annotated[str, Field(description="Location of working directory")] = "/jet/home/eshen3/Agent4Molecule/mcp_agent/data",
+):
+    """
+    Use ClustalW to mine motifs from the MSA of enzymes in a given enzyme category.
+    Then call msa_to_enzygen_motif to convert the MSA and a representative PDB chain to EnzyGen motif fields.
+    """
+    
+    logger.info(f"Starting mine_motifs with params: enzyme_file={enzyme_fastafile}, pdb_file={ref_pdb_file}, chain_id={chain_id}, workspace={workspace}")
+    
+    try:
+        # Validate input files exist
+        if not os.path.exists(enzyme_fastafile):
+            error_msg = f"Enzyme FASTA file not found: {enzyme_fastafile}"
+            logger.error(error_msg)
+            return f"ERROR: {error_msg}"
+        
+        if not os.path.exists(ref_pdb_file):
+            error_msg = f"Reference PDB file not found: {ref_pdb_file}"
+            logger.error(error_msg)
+            return f"ERROR: {error_msg}"
+        
+        logger.info(f"Input files validated successfully")
+        
+        # Setup workspace
+        os.makedirs(workspace, exist_ok=True)
+        original_cwd = os.getcwd()
+        os.chdir(workspace)
+        logger.info(f"Changed to workspace directory: {workspace}")
+
+        # Use absolute paths for ClustalW
+        abs_enzyme_file = os.path.abspath(enzyme_fastafile)
+        aligned_file = os.path.join(workspace, "aligned_enzyme.aln")
+        
+        logger.info(f"Absolute enzyme file path: {abs_enzyme_file}")
+        logger.info(f"Output alignment file: {aligned_file}")
+
+        clustalW_cmd = [
+            "clustalw",
+            f"-INFILE={abs_enzyme_file}", 
+            "-TYPE=PROTEIN",
+            f"-OUTFILE={aligned_file}",
+        ]
+        
+        logger.info(f"Running ClustalW command: {' '.join(clustalW_cmd)}")
+
+        try:
+            result = subprocess.run(clustalW_cmd, check=True, capture_output=True, text=True)
+            logger.info(f"ClustalW stdout: {result.stdout}")
+            if result.stderr:
+                logger.warning(f"ClustalW stderr: {result.stderr}")
+        except subprocess.CalledProcessError as e:
+            error_msg = f"ClustalW failed with return code {e.returncode}\nstdout: {e.stdout}\nstderr: {e.stderr}"
+            logger.error(error_msg)
+            os.chdir(original_cwd)
+            return f"ERROR: {error_msg}"
+        
+        # Check if alignment file was created
+        if not os.path.exists(aligned_file):
+            error_msg = f"ClustalW alignment file was not created: {aligned_file}"
+            logger.error(error_msg)
+            os.chdir(original_cwd)
+            return f"ERROR: {error_msg}"
+        
+        logger.info(f"ClustalW alignment completed successfully. File size: {os.path.getsize(aligned_file)} bytes")
+        
+        # Convert alignment to motif indices, sequences, and coordinates
+        logger.info(f"Starting motif extraction with msa_to_enzygen_motif")
+        try:
+            motif_data = msa_to_enzygen_motif(
+                aln_path=aligned_file,
+                aln_format="clustal",
+                structure_path=ref_pdb_file,
+                chain_id=chain_id
+            )
+            
+            logger.info(f"Motif extraction completed successfully")
+            logger.debug(f"Motif data keys: {motif_data.keys()}")
+            
+            motif_indices = motif_data["motif_indices"]
+            motif_seq = motif_data["motif_seq"] 
+            motif_coord = motif_data["motif_coord"]
+            
+            logger.info(f"Extracted {len(motif_indices)} motif positions")
+            logger.debug(f"Motif indices: {motif_indices}")
+            logger.debug(f"Motif sequences: {motif_seq}")
+
+            os.chdir(original_cwd)
+            success_msg = f"SUCCESS: Mined motif indices: {motif_indices}\nMined motif sequence: {motif_seq}\nMined motif coordinates: {motif_coord}"
+            logger.info("mine_motifs completed successfully")
+            return success_msg
+        
+        except Exception as e:
+            error_msg = f"Error in motif processing: {str(e)}\nTraceback: {traceback.format_exc()}"
+            logger.error(error_msg)
+            os.chdir(original_cwd)
+            return f"ERROR: {error_msg}"
+    
+    except Exception as e:
+        error_msg = f"Unexpected error in mine_motifs: {str(e)}\nTraceback: {traceback.format_exc()}"
+        logger.error(error_msg)
+        return f"ERROR: {error_msg}"
 
 @mcp.tool()
 def change_specific_residues_using_enzygen_if_required(
