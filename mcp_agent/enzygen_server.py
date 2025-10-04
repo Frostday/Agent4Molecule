@@ -7,6 +7,7 @@ import time
 import pandas as pd
 import numpy as np
 import glob
+import shlex
 import random
 import re
 import logging
@@ -14,8 +15,6 @@ import traceback
 import sys
 from Bio import AlignIO
 from util.msa_to_motif import msa_to_enzygen_motif
-
-from run_utils import extract_job_id
 
 # Configure logging
 logging.basicConfig(
@@ -28,12 +27,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ENZYGEN_PATH = "/ocean/projects/cis240137p/dgarg2/github/EnzyGen/"
-ENZYGEN_CONDA_ENV = "/ocean/projects/cis240137p/dgarg2/miniconda3/envs/enzygen/bin/python"
-COLABFOLD_CACHE = "/ocean/projects/cis240137p/dgarg2/github/colabfold/cf_cache"
-COLABFOLD_SIF = "/ocean/projects/cis240137p/dgarg2/github/colabfold/colabfold_1.5.5-cuda12.2.2.sif"
-combine_protein_ligand_file = "/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/combine_protein_ligand.py"
-PYTHON = {"diffusion": f"/ocean/projects/cis240137p/dgarg2/miniconda3/envs/diffusion/bin/python", "vina": f"/ocean/projects/cis240137p/dgarg2/miniconda3/envs/vina/bin/python"}
+ENZYGEN_PATH = "/ocean/projects/cis240137p/eshen3/github/EnzyGen/"
+ENZYGEN_CONDA_ENV = "/ocean/projects/cis240137p/eshen3/anaconda3/envs/enzygen/bin/python"
+COLABFOLD_CACHE = "/ocean/projects/cis240137p/eshen3/colabfold/cf_cache"
+COLABFOLD_SIF = "/ocean/projects/cis240137p/eshen3/colabfold/colabfold_1.5.5-cuda12.2.2.sif"
+combine_protein_ligand_file = "/jet/home/eshen3/Agent4Molecule/mcp_agent/util/combine_protein_ligand.py"
+PYTHON = {"diffusion": f"/ocean/projects/cis240137p/eshen3/anaconda3/envs/diffusion/bin/python", "vina": f"/ocean/projects/cis240137p/eshen3/anaconda/envs/docking/bin/python"}
 import sys
 sys.path.append(ENZYGEN_PATH)
 
@@ -48,6 +47,17 @@ three_to_one = {
     "SER":"S","THR":"T","TRP":"W","TYR":"Y","VAL":"V",
     "SEC":"U","PYL":"O","ASX":"B","GLX":"Z","XAA":"X","UNK":"X"
 }
+
+def _shquote(s: str) -> str:
+    return shlex.quote(s)
+
+def extract_job_id(output: str) -> str:
+    """Extracts the job ID from the output of the sbatch command."""
+    lines = output.split('\n')
+    for line in lines:
+        if "Submitted batch job" in line:
+            return line.split()[-1]
+    return ""
 
 @mcp.tool()
 def debug_info() -> str:
@@ -92,18 +102,18 @@ def debug_info() -> str:
         return f"Debug info failed: {str(e)}\nTraceback: {traceback.format_exc()}"
 
 # AF2 setup
-CONDAPATH = "/ocean/projects/cis240137p/dgarg2/miniconda3"
-HEME_BINDER_PATH = "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/"
-SCRIPT_DIR = os.path.dirname(HEME_BINDER_PATH)
-AF2_script = f"{SCRIPT_DIR}/scripts/af2/af2.py"
-PYTHON = {
-    "diffusion": f"{CONDAPATH}/envs/diffusion/bin/python",
-    "af2": f"{CONDAPATH}/envs/mlfold/bin/python",
-    "proteinMPNN": f"{CONDAPATH}/envs/diffusion/bin/python",
-    "general": f"{CONDAPATH}/envs/diffusion/bin/python"
-}
-sys.path.append(HEME_BINDER_PATH)
-sys.path.append(SCRIPT_DIR+"/scripts/utils")
+# CONDAPATH = "/ocean/projects/cis240137p/dgarg2/miniconda3"
+# HEME_BINDER_PATH = "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/"
+# SCRIPT_DIR = os.path.dirname(HEME_BINDER_PATH)
+# AF2_script = f"{SCRIPT_DIR}/scripts/af2/af2.py"
+# PYTHON = {
+#     "diffusion": f"{CONDAPATH}/envs/diffusion/bin/python",
+#     "af2": f"{CONDAPATH}/envs/mlfold/bin/python",
+#     "proteinMPNN": f"{CONDAPATH}/envs/diffusion/bin/python",
+#     "general": f"{CONDAPATH}/envs/diffusion/bin/python"
+# }
+# sys.path.append(HEME_BINDER_PATH)
+# sys.path.append(SCRIPT_DIR+"/scripts/utils")
 # import utils
 
 @mcp.tool()
@@ -120,31 +130,31 @@ def find_enzyme_category_using_keywords(
     return "Top 5 results:\n\n" + result.head(5).to_csv(index=False)
 
 
-# @mcp.tool()
-# def find_mined_motifs_enzyme_category(
-#     enzyme_category: Annotated[str, Field(description="Enzyme category (e.g. 4.6.1.1)")],
-#     start_index: Annotated[int, Field(description="Start index is inclusive (suggestion: only extract 2-5 at a time)")] = 0,
-#     end_index: Annotated[int, Field(description="End index is exclusive (suggestion: only extract 2-5 at a time)")] = 2,
-# ) -> str:
-#     file_path = os.path.dirname(os.path.abspath(__file__))
-#     os.chdir(file_path)
-#     if end_index < start_index:
-#         return "End index should be greater than start index"
-#     with open("data/mined_motifs.json") as f:
-#         data = json.load(f)
-#     if enzyme_category not in data.keys():
-#         return "No motif information available for the enzyme category - try another EC4 category or ask the user for motif information"
-#     data = data[enzyme_category]
-#     options = []
-#     if end_index > len(data):
-#         return "Number of mined motifs is less than the end index (total: {})".format(len(data))
-#     for i, d in enumerate(data[start_index:end_index]):
-#         text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Motif sequence: {np.array(d['seq'])[d['motif']].tolist()}\n\t- Motif coordinates: {np.array(d['coor'])[d['motif']].tolist()}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
-#         # text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Sequence: {d['seq']}\n\t- Coordinates: {d['coor']}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
-#         options.append(text)
-#     return f"Total motif options: {len(data)}\n\nHere are some mined motifs for the enzyme family {enzyme_category}:\n\n" + "\n".join(options)
-
 @mcp.tool()
+def find_mined_motifs_enzyme_category(
+    enzyme_category: Annotated[str, Field(description="Enzyme category (e.g. 4.6.1.1)")],
+    start_index: Annotated[int, Field(description="Start index is inclusive (suggestion: only extract 2-5 at a time)")] = 0,
+    end_index: Annotated[int, Field(description="End index is exclusive (suggestion: only extract 2-5 at a time)")] = 2,
+) -> str:
+    file_path = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(file_path)
+    if end_index < start_index:
+        return "End index should be greater than start index"
+    with open("data/mined_motifs.json") as f:
+        data = json.load(f)
+    if enzyme_category not in data.keys():
+        return "No motif information available for the enzyme category - try another EC4 category or ask the user for motif information"
+    data = data[enzyme_category]
+    options = []
+    if end_index > len(data):
+        return "Number of mined motifs is less than the end index (total: {})".format(len(data))
+    for i, d in enumerate(data[start_index:end_index]):
+        text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Motif sequence: {np.array(d['seq'])[d['motif']].tolist()}\n\t- Motif coordinates: {np.array(d['coor'])[d['motif']].tolist()}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
+        # text = f"- Test {i+1}\n\t- Motif indices: {d['motif']}\n\t- Sequence: {d['seq']}\n\t- Coordinates: {d['coor']}\n\t- Recommended length: {len(d['seq'])}\n\t- Reference PDB: {d['pdb']}"
+        options.append(text)
+    return f"Total motif options: {len(data)}\n\nHere are some mined motifs for the enzyme family {enzyme_category}:\n\n" + "\n".join(options)
+
+# @mcp.tool()
 def mine_motifs(
     enzyme_fastafile: Annotated[str, Field(description="Location of MSA fasta file of enzymes in the enzyme category")] = "/jet/home/eshen3/Agent4Molecule/mcp_agent/data/enzyme.fasta",
     ref_pdb_file: Annotated[str, Field(description="Location of representative PDB file of an enzyme in the enzyme category")] = "/jet/home/eshen3/Agent4Molecule/mcp_agent/data/1U3T.pdb",
@@ -273,8 +283,8 @@ def change_specific_residues_using_enzygen_if_required(
     motif_coord = []
     cur_index = add_amino_acids_at_beginning
     for i in indices:
-        if str(i) in add_amino_acids_at_index.keys():
-            cur_index += add_amino_acids_at_index[str(i)]
+        if str(i) in add_amino_acids_dict.keys():
+            cur_index += add_amino_acids_dict[str(i)]
         if cur_index + i + add_amino_acids_at_end == length + 1:
             break
         if i not in residues_to_change:
@@ -440,7 +450,7 @@ def convert_ligand_pdb_to_sdf_for_docking(
     p = subprocess.Popen(obabel_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
-    clean_cmd = f"{PYTHON['vina']} /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
+    clean_cmd = f"{PYTHON['vina']} /jet/home/eshen3/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
     p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
@@ -536,6 +546,89 @@ def get_docked_protein_ligand_complex(
     (output, err) = p.communicate()
         
     return f"Docked protein-ligand pdb file generated at: {INPUT_DIR}/protein_ligand_complex.pdb"
+
+@mcp.tool()
+def run_gromacs_copilot(
+    prompt: Annotated[str, Field(description="Natural language prompt to control GROMACS Copilot")],
+    ligand_pdb_path: Annotated[str, Field(description="Path to the ligand pdb file")],
+    receptor_pdb_path: Annotated[str, Field(description="Path to the receptor pdb file")],
+    api_key: Annotated[str, Field(description="API key for LLM service")] = os.getenv("GEMINI_API_KEY"),
+    model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")] = "gemini-2.0-flash",
+    api_url: Annotated[str, Field(description="URL for LLM API")] = "https://generativelanguage.googleapis.com/v1beta/chat/completions",
+    mode: Annotated[str, Field(description="Copilot mode: copilot, agent, or debug")] = "agent",
+    ) -> str:
+    """
+    Submits a SLURM job to run GROMACS Copilot and waits for completion.
+    """
+
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {receptor_pdb_path} {INPUT_DIR}/receptor.pdb")
+    os.system(f"cp {ligand_pdb_path} {INPUT_DIR}/ligand.pdb")
+    os.chdir(INPUT_DIR)
+
+    slurm_script = os.path.join(INPUT_DIR, "run_copilot.sh")
+    log_file = os.path.join(INPUT_DIR, "copilot_output.log")
+
+    # Build the gmx_copilot command (quote everything)
+    cmd = (
+        f"gmx_copilot "
+        f"--workspace {_shquote(INPUT_DIR)} "
+        f"--prompt {_shquote(prompt)} "
+        f"--api-key {api_key} "
+        f"--model {_shquote(model)} "
+        f"--url {_shquote(api_url)} "
+        f"--mode {_shquote(mode)}"
+    )
+
+    script_text = (
+        "#!/bin/bash\n"
+        f"#SBATCH -N 1\n"
+        f"#SBATCH -p GPU-shared\n"
+        f"#SBATCH -t 24:00:00\n"
+        f"#SBATCH --gres=gpu:1\n"
+        f"#SBATCH --output={log_file}\n\n"
+        "source ~/.bashrc\n"
+        'eval "$(conda shell.bash hook)"\n'
+        f'echo "=== Activating conda env"\n'
+        f"conda activate gromacs_env\n\n"
+        "nvidia-smi\n"
+        'echo "=== Setting project path"\n'
+        f"cd /jet/home/eshen3/gromacs_copilot\n"
+        'echo "=== Running gmx_copilot"\n\n'
+        f"{cmd}\n"
+    )
+
+    with open(slurm_script, "w") as f:
+        f.write(script_text)
+    print(f"SLURM script written to {slurm_script}")
+
+    p = subprocess.Popen(["sbatch", slurm_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, err = p.communicate()
+
+    if p.returncode != 0:
+        raise RuntimeError(f"Failed to submit SLURM job:\n{err.decode()}")
+
+    output_str = output.decode("utf-8")
+    print(output_str)
+    job_id = output_str.strip().split()[-1]
+
+    # Wait for job to complete
+    print(f"Submitted job {job_id}. Waiting for it to complete...")
+    while True:
+        q = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        qout, _ = q.communicate()
+        if job_id not in qout.decode("utf-8"):
+            break
+        print("Job still running...")
+        time.sleep(60)
+
+
+    # Collect and return outputs
+    with open(log_file, "r") as f:
+        logs = f.read()
+
+    return f"Job {job_id} completed.\n\nLog Output:\n{logs}\n\nErrors:\n{errors}"
 
 
 def cleanup():
