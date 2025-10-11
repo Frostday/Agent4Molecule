@@ -33,6 +33,6 @@ def part_to_dict(p: Part) -> dict:
 def content_to_dict(c: Content) -> dict:
     return {
         "role": getattr(c, "role", None),
-        "parts": [part_to_dict(p) for p in getattr(c, "parts", [])],
+        "parts": [part_to_dict(p) for p in (getattr(c, "parts", None) or [])],
     }
 

@@ -56,10 +56,11 @@ Here are some properties you should try to obtain:
 - all_cst <= 1.5
 - CMS per atom >= 3.0 -->
 
+1. Design a heme-binding protein for the heme "HBA" ("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/HBA.pdb") starting with the interactions shown in the pdb (/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/7o2g_HBA.pdb). Preserve the interaction between ligand atoms "FE1 N4 C19" (HBA) and protein atoms "SH1"/"A15" (CYS). Output structures that have a pLDDT score greater than 80 and RMSD less than 5.0 angstroms.
+
 ### Gromacs prompt
 
 Run an MD simulation system for 1pga_protein.pdb in the md_workspace. Use the default values for model, API key, API URL, mode, model and workspace.
-
 
 ### Docking
 
