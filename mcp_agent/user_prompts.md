@@ -68,4 +68,6 @@ Run a docking using ligand 1iep_ligand.sdf and receptor 1iep_receptorH.pdb in wo
 
 ### PPDiff
 
+1. Design a binder for the target protein ("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/binder_design_example.pdb") of length 65
 
+2. Design an antibody referencing pdb for "8tzy" ("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/antibody_design_example_1.pdb") with Antigen length 168, Heavy chain length 124 and cdr indices [193, 194, 195, 196, 197, 198, 199, 200, 218, 219, 220, 221, 222, 223, 224, 225, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 316, 317, 318, 319, 320, 321, 322, 340, 341, 342, 379, 380, 381, 382, 383, 384, 385, 386]
