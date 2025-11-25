@@ -16,6 +16,9 @@ PPDIFF_PATH = "/ocean/projects/cis240137p/dgarg2/github/PPDiff/"
 PPDIFF_CONDA_ENV = "/ocean/projects/cis240137p/dgarg2/miniconda3/envs/ppdiff/bin/python"
 COLABFOLD_CACHE = "/ocean/projects/cis240137p/dgarg2/github/colabfold/cf_cache"
 COLABFOLD_SIF = "/ocean/projects/cis240137p/dgarg2/github/colabfold/colabfold_1.5.5-cuda12.2.2.sif"
+AF3_PATH = "/ocean/projects/cis240137p/dgarg2/github/alphafold3"
+AF3_MODELS = "/ocean/projects/cis240137p/dgarg2/af3_models"
+AF3_DATA = "/ocean/projects/cis240137p/dgarg2/af3_data"
 import sys
 sys.path.append(PPDIFF_PATH)
 
@@ -157,7 +160,7 @@ def run_ppdiff_binder_design(
     with open(f"{PPDIFF_PATH}/output.err", "r") as f:
         errors = f.read()
 
-    return f"PPDiff Finished Successfully\nPredicted sequence from PPDiff: {PPDIFF_PATH}/models/output/binder_design1/binder.gen.txt\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    return f"PPDiff Finished Successfully\nTarget protein: {PPDIFF_PATH}/models/output/binder_design1/target.txt\nPredicted sequence from PPDiff: {PPDIFF_PATH}/models/output/binder_design1/binder.gen.txt\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 @mcp.tool()
@@ -203,58 +206,158 @@ def run_ppdiff_antibody_design(
     with open(f"{PPDIFF_PATH}/output.err", "r") as f:
         errors = f.read()
 
-    return f"PPDiff Finished Successfully\nPredicted heavy chain sequence from PPDiff: {PPDIFF_PATH}/models/output/{cdr}1/heavy.chain.gen.txt\nPredicted light chain sequence from PPDiff: {PPDIFF_PATH}/models/output/{cdr}1/light.chain.gen.txt\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    return f"PPDiff Finished Successfully\nAntigen sequence: {PPDIFF_PATH}/models/output/{cdr}1/antigen.gen.txt\nPredicted heavy chain sequence from PPDiff: {PPDIFF_PATH}/models/output/{cdr}1/heavy.chain.gen.txt\nPredicted light chain sequence from PPDiff: {PPDIFF_PATH}/models/output/{cdr}1/light.chain.gen.txt\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
-# @mcp.tool()
-# def run_colabfold_on_ppdiff_output(
-#     sequence_file: Annotated[str, Field(description="Location of enzygen sequence file (protein.txt from enzygen)")],
-#     job_time: Annotated[str, Field(description="Time limit for AF2 jobs")] = "1:00:00",
-# ):
-#     AF2_DIR = f"{PPDIFF_PATH}/af2_outputs/"
-#     os.makedirs(AF2_DIR, exist_ok=True)
-#     os.chdir(AF2_DIR)
-#     os.system(f"rm -rf {AF2_DIR}/*")
+@mcp.tool()
+def run_alphafold3_on_ppdiff_binder_output(
+    target_sequence_file: Annotated[str, Field(description="Location of PPDiff target sequence file (target.txt from ppdiff)")],
+    binder_sequence_file: Annotated[str, Field(description="Location of PPDiff binder sequence file (binder.gen.txt from ppdiff)")],
+    job_time: Annotated[str, Field(description="Time limit for AF2 jobs")] = "6:00:00",
+):
+    os.chdir(AF3_PATH)
+    os.system("mkdir -p inputs/ outputs/")
     
-#     with open(sequence_file, "r") as f:
-#         sequence = f.read()
-#     with open("input_seq.fasta", "w") as f:
-#         f.write(">ppdiff\n" + sequence)
+    with open(target_sequence_file, "r") as f:
+        target_seq = f.read().strip().replace("\n", "")
+    with open(binder_sequence_file, "r") as f:
+        binder_seq = f.read().strip().replace("\n", "")
+    
+    af3_input_json = {
+        "name": "ppdiff_protein_binder_complex",
+        "dialect": "alphafold3",
+        "version": 1,
+        "modelSeeds": [1],
+        "sequences": [
+            {
+                "protein": {
+                    "id": "T",
+                    "sequence": target_seq
+                }
+            },
+            {
+                "protein": {
+                    "id": "B",
+                    "sequence": binder_seq
+                }
+            }
+        ]
+    }
 
-#     command = f"apptainer exec --nv -B {COLABFOLD_CACHE}:/cache -B {AF2_DIR}:/work {COLABFOLD_SIF} colabfold_batch /work/input_seq.fasta /work/out --msa-mode mmseqs2_uniref_env --pair-mode unpaired_paired --use-gpu-relax --num-seeds 1 --num-models 1 --model-type alphafold2_ptm"
-#     with open("submit_colabfold.sh", "w") as f:
-#         f.write(f"#!/bin/bash\n#SBATCH -N 1\n#SBATCH -p GPU-small\n#SBATCH -t {job_time}\n#SBATCH --gpus=v100-32:1\n#SBATCH --output=output.log\n#SBATCH -n 2\n#SBATCH -e output.err\n{command}")
+    with open("inputs/ppdiff_binder_input.json", "w") as f:
+        json.dump(af3_input_json, f, indent=4)
 
-#     p = subprocess.Popen(['sbatch', 'submit_colabfold.sh'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#     (output, err) = p.communicate()
-#     job_id = extract_job_id(output.decode('utf-8'))
-#     print("Colabfold Job ID:", job_id)
-#     while True:
-#         p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#         (output, err) = p.communicate()
-#         if job_id not in str(output):
-#             break
-#         print("Job still running...")
-#         time.sleep(60)
+    slurm_file = f"#!/bin/bash\n#SBATCH -N 1\n#SBATCH -n 2\n#SBATCH -p GPU-shared\n#SBATCH -t 24:00:00\n#SBATCH --gpus=h100-80:1\n#SBATCH --output=output.log\n#SBATCH -e output.err\n\napptainer exec --nv --bind {AF3_PATH}/inputs:/root/af_input --bind {AF3_PATH}/outputs:/root/af_output --bind {AF3_MODELS}:/root/models --bind {AF3_DATA}:/root/public_databases alphafold3.sif python /app/alphafold/run_alphafold.py --json_path=/root/af_input/ppdiff_binder_input.json --model_dir=/root/models --db_dir=/root/public_databases --output_dir=/root/af_output\n"
+    with open("run_slurm.sh", "w") as f:
+        f.write(slurm_file)
     
-#     with open(os.path.join(AF2_DIR, "output.log"), "r") as f:
-#         logs = f.read()
-#     with open(os.path.join(AF2_DIR, "output.err"), "r") as f:
-#         errors = f.read()
+    p = subprocess.Popen(f"cd {AF3_PATH} && sbatch run_slurm.sh", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    job_id = extract_job_id(output.decode('utf-8'))
+    print("PPDiff Job ID:", job_id)
+    while True:
+        p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (output, err) = p.communicate()
+        if job_id not in str(output):
+            break
+        print("Job still running...")
+        time.sleep(300)
+
+    with open("outputs/ppdiff_protein_binder_complex/ppdiff_protein_binder_complex_confidences.json") as f:
+        file = json.load(f)
+        pae = np.mean(file["pae"])
+        plddt = np.mean(file["atom_plddts"])
+    with open("outputs/ppdiff_protein_binder_complex/ppdiff_protein_binder_complex_summary_confidences.json") as f:
+        file = json.load(f)
+        iptm = file["iptm"]
+        ptm = file["ptm"]
+    complex_file = "outputs/ppdiff_protein_binder_complex/ppdiff_protein_binder_complex_model.cif"
+    with open("output.log", "r") as f:
+        logs = f.read()
+    with open("output.err", "r") as f:
+        errors = f.read()
+
+    return f"AlphaFold3 Finished Successfully\nPredicted complex structure: {complex_file}\npLDDT: {plddt}\nipTM: {iptm}\npTM: {ptm}\nPAE: {pae}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+
+
+@mcp.tool()
+def run_alphafold3_on_antibody_binder_output(
+    antigen_sequence_file: Annotated[str, Field(description="Location of PPDiff target sequence file (antigen.gen.txt from ppdiff)")],
+    heavy_chain_sequence_file: Annotated[str, Field(description="Location of PPDiff binder sequence file (heavy.chain.gen.txt from ppdiff)")],
+    light_chain_sequence_file: Annotated[str, Field(description="Location of PPDiff binder sequence file (light.chain.gen.txt from ppdiff)")],
+    job_time: Annotated[str, Field(description="Time limit for AF2 jobs")] = "6:00:00",
+):
+    os.chdir(AF3_PATH)
+    os.system("mkdir -p inputs/ outputs/")
     
-#     structures = []
-#     plddt_scores = []
-#     protein_pdbs = glob.glob(f"{AF2_DIR}/out/*.pdb")
-#     for pdb in protein_pdbs:
-#         scores_file = pdb.replace(".pdb", ".json").replace("unrelaxed", "scores")
-#         with open(scores_file, "r") as f:
-#             scores = json.loads(f.read())
-#         plddt_scores.append(float(np.mean(scores["plddt"])))
-#         with open(pdb, "r") as f:
-#             pdb = f.read()
-#         structures.append(f"File: {pdb}\n\n" + pdb)
+    with open(antigen_sequence_file, "r") as f:
+        antigen_seq = f.read().strip().replace("\n", "")
+    with open(heavy_chain_sequence_file, "r") as f:
+        heavy_chain_seq = f.read().strip().replace("\n", "")
+    with open(light_chain_sequence_file, "r") as f:
+        light_chain_seq = f.read().strip().replace("\n", "")
     
-#     return f"Colabfold Job Completed\nAll output files: {protein_pdbs}\nAll plddt scores: {plddt_scores}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+    af3_input_json = {
+        "name": "ppdiff_antibody_antigen_complex",
+        "dialect": "alphafold3",
+        "version": 1,
+        "modelSeeds": [1],
+        "sequences": [
+            {
+                "protein": {
+                    "id": "A",
+                    "sequence": antigen_seq
+                }
+            },
+            {
+                "protein": {
+                    "id": "H",
+                    "sequence": heavy_chain_seq
+                }
+            },
+            {
+                "protein": {
+                    "id": "L",
+                    "sequence": light_chain_seq
+                }
+            }
+        ]
+    }
+
+    with open("inputs/ppdiff_antibody_input.json", "w") as f:
+        json.dump(af3_input_json, f, indent=4)
+
+    slurm_file = f"#!/bin/bash\n#SBATCH -N 1\n#SBATCH -n 2\n#SBATCH -p GPU-shared\n#SBATCH -t 24:00:00\n#SBATCH --gpus=h100-80:1\n#SBATCH --output=output.log\n#SBATCH -e output.err\n\napptainer exec --nv --bind {AF3_PATH}/inputs:/root/af_input --bind {AF3_PATH}/outputs:/root/af_output --bind {AF3_MODELS}:/root/models --bind {AF3_DATA}:/root/public_databases alphafold3.sif python /app/alphafold/run_alphafold.py --json_path=/root/af_input/ppdiff_antibody_input.json --model_dir=/root/models --db_dir=/root/public_databases --output_dir=/root/af_output\n"
+    with open("run_slurm.sh", "w") as f:
+        f.write(slurm_file)
+    
+    p = subprocess.Popen(f"cd {AF3_PATH} && sbatch run_slurm.sh", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    job_id = extract_job_id(output.decode('utf-8'))
+    print("PPDiff Job ID:", job_id)
+    while True:
+        p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (output, err) = p.communicate()
+        if job_id not in str(output):
+            break
+        print("Job still running...")
+        time.sleep(300)
+
+    with open("outputs/ppdiff_antibody_antigen_complex/ppdiff_antibody_antigen_complex_confidences.json") as f:
+        file = json.load(f)
+        pae = np.mean(file["pae"])
+        plddt = np.mean(file["atom_plddts"])
+    with open("outputs/ppdiff_antibody_antigen_complex/ppdiff_antibody_antigen_complex_summary_confidences.json") as f:
+        file = json.load(f)
+        iptm = file["iptm"]
+        ptm = file["ptm"]
+    complex_file = "outputs/ppdiff_antibody_antigen_complex/ppdiff_antibody_antigen_complex_model.cif"
+    with open("output.log", "r") as f:
+        logs = f.read()
+    with open("output.err", "r") as f:
+        errors = f.read()
+
+    return f"AlphaFold3 Finished Successfully\nPredicted complex structure: {complex_file}\npLDDT: {plddt}\nipTM: {iptm}\npTM: {ptm}\nPAE: {pae}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
 
 if __name__ == "__main__":
@@ -281,4 +384,17 @@ if __name__ == "__main__":
 
     # time.sleep(5)
     # out = run_ppdiff_antibody_design("/ocean/projects/cis240137p/dgarg2/github/PPDiff/data/input_antibody_design.json", 1)
+    # print(out)
+
+    # out = run_alphafold3_on_ppdiff_binder_output(
+    #     "/ocean/projects/cis240137p/dgarg2/github/PPDiff/models/output/binder_design1/target.txt",
+    #     "/ocean/projects/cis240137p/dgarg2/github/PPDiff/models/output/binder_design1/binder.gen.txt"
+    # )
+    # print(out)
+
+    # out = run_alphafold3_on_antibody_binder_output(
+    #     "/ocean/projects/cis240137p/dgarg2/github/PPDiff/models/output/antibody_design_cdrh11/antigen.gen.txt",
+    #     "/ocean/projects/cis240137p/dgarg2/github/PPDiff/models/output/antibody_design_cdrh11/heavy.chain.gen.txt",
+    #     "/ocean/projects/cis240137p/dgarg2/github/PPDiff/models/output/antibody_design_cdrh11/light.chain.gen.txt"
+    # )
     # print(out)
