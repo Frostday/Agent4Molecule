@@ -11,7 +11,7 @@
 - PDB file = "5cxl.A" 
 - Recommended length = 20  -->
 
-1. Design an enzyme that functions as an adenylate-processing protein, acting like a cyclase to transform ATP into 3’,5’-cyclic AMP while releasing pyrophosphate. The enzyme should resemble known adenylylcyclases in structure and activity, and be capable of catalyzing the formation of cyclic AMP as a signaling molecule. Try docking and MD to make sure the generated structure has good binding affinity to /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/substrate_ligand.pdb.
+1. Design an enzyme that functions as an adenylate-processing protein, acting like a cyclase to transform ATP into 3’,5’-cyclic AMP while releasing pyrophosphate. The enzyme should resemble known adenylylcyclases in structure and activity, and be capable of catalyzing the formation of cyclic AMP as a signaling molecule. Try docking and MD to make sure the generated structure has good binding affinity to /jet/home/eshen3/Agent4Molecule/mcp_agent/inputs/substrate_ligand.pdb.
 
 <!-- 2. Design a novel adenylate cyclase enzyme molecule that catalyzes the ATP diphosphate-lyase (cyclizing) reaction, converting ATP into 3’,5’-cyclic AMP. The structure should resemble natural adenylylcyclases while maintaining efficient 3’,5’-cyclic AMP synthetase activity.
 

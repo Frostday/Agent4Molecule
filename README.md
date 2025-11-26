@@ -12,9 +12,12 @@
 
 ## Run
 
-```
-python client.py enzygen_server.py
+```python client.py enzygen_server.py
+
 python client.py heme_binder_server.py
 python client.py docking_server.py
 python client.py gromacs_server.py
 ```
+
+
+export GEMINI_API_KEY=AIzaSyBAPm9hDxFiM0kSGGdCQDvQtA7l2RjD6d4
