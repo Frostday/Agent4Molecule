@@ -1,5 +1,5 @@
 import os
-from typing import Annotated
+from typing import Annotated, Dict, List
 from pydantic import Field
 import json
 import subprocess
@@ -15,6 +15,8 @@ import traceback
 import sys
 from Bio import AlignIO
 from util.msa_to_motif import msa_to_enzygen_motif
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 # Configure logging
 logging.basicConfig(
@@ -27,12 +29,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ENZYGEN_PATH = "/ocean/projects/cis240137p/eshen3/github/EnzyGen/"
+ENZYGEN_PATH = "/ocean/projects/cis240137p/eshen3/github/EnzyGen"
 ENZYGEN_CONDA_ENV = "/ocean/projects/cis240137p/eshen3/anaconda3/envs/enzygen/bin/python"
 COLABFOLD_CACHE = "/ocean/projects/cis240137p/eshen3/colabfold/cf_cache"
 COLABFOLD_SIF = "/ocean/projects/cis240137p/eshen3/colabfold/colabfold_1.5.5-cuda12.2.2.sif"
 combine_protein_ligand_file = "/jet/home/eshen3/Agent4Molecule/mcp_agent/util/combine_protein_ligand.py"
 PYTHON = {"diffusion": f"/ocean/projects/cis240137p/eshen3/anaconda3/envs/diffusion/bin/python", "vina": f"/ocean/projects/cis240137p/eshen3/anaconda/envs/docking/bin/python"}
+DOCKING_ENV_NAME = "docking"
+EC_FOLDER = "4.6.1.12"
+ESP_CONDA_ENV = "esp"
+
 import sys
 sys.path.append(ENZYGEN_PATH)
 
@@ -261,40 +267,46 @@ def mine_motifs(
         logger.error(error_msg)
         return f"ERROR: {error_msg}"
 
-@mcp.tool()
-def change_specific_residues_using_enzygen_if_required(
-    enzyme_family: Annotated[str, Field(description="Enzyme family of the enzyme to be generated (EC4 category e.g. 1.1.1.1)")],
-    pdb: Annotated[str, Field(description="AlphaFold generated PDB file")],
-    residues_to_change: Annotated[list[int], Field(description="Indices of residues to be changed (e.g. [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]) - indexing is done from 1")],
-    recommended_length: Annotated[int, Field(description="Recommended length of the enzyme to be generated (default: use same length)")] = None,
-    add_amino_acids_at_beginning: Annotated[int, Field(description="Number of new amino acids to be added at the beginning (default: 0)")] = 0,
-    add_amino_acids_at_end: Annotated[int, Field(description="Number of new amino acids to be added at the end (default: use length to determine the number of amino acids to add)")] = 0,
-    add_amino_acids_at_index: Annotated[dict, Field(description="Number of new amino acids to be added at a given index e.g. {\"2\": 10, \"100\": 20} adds 10 amino acids at index 2, 20 at index 100 (make sure to provide all keys as strings and values as integers) - indexing is done from 1\n")] = {},
-) -> str:
-    with open(pdb, "r") as f:
-        content = f.read()
-    indices = list(set([int(i) for i in re.findall(r"ATOM\s+\d+\s+\w+\s+\w+\s+\w+\s+(\d+)\s+", content)]))
-    if recommended_length is None:
-        length = len(indices)
-    else:
-        length = recommended_length
-    motif_indices = []
-    motif_seq = []
-    motif_coord = []
-    cur_index = add_amino_acids_at_beginning
-    for i in indices:
-        if str(i) in add_amino_acids_dict.keys():
-            cur_index += add_amino_acids_dict[str(i)]
-        if cur_index + i + add_amino_acids_at_end == length + 1:
-            break
-        if i not in residues_to_change:
-            atoms = re.findall(fr"ATOM\s+\d+\s+\w+\s+\w+\s+\w+\s+{i}\s+.*", content)
-            atoms = np.array([np.array(a.split()) for a in atoms])
-            motif_indices.append(cur_index + i-1)
-            motif_seq.append(three_to_one[atoms[0, 3]])
-            motif_coord.append(np.round(np.mean(atoms[:, 6:9].astype(float), axis=0), 3).tolist())
-    # return f"Data for enzygen:\n- Motif indices: {motif_indices}\n- Motif sequence: {motif_seq}\n- Motif coordinates: {motif_coord}\n- Recommended length: {length}"
-    return build_enzygen_input(enzyme_family=enzyme_family, motif_indices=motif_indices, motif_seq=motif_seq, motif_coord=motif_coord, recommended_length=length)
+# @mcp.tool()
+# def change_specific_residues_using_enzygen_if_required(
+#     enzyme_family: Annotated[str, Field(description="Enzyme family of the enzyme to be generated (EC4 category e.g. 1.1.1.1)")],
+#     pdb: Annotated[str, Field(description="AlphaFold generated PDB file")],
+#     residues_to_change: Annotated[List[int], Field(description="Indices of residues to be changed (e.g. [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]) - indexing is done from 1")],
+#     recommended_length: Annotated[int, Field(description="Recommended length of the enzyme to be generated (default: use same length)")] = None,
+#     add_amino_acids_at_beginning: Annotated[int, Field(description="Number of new amino acids to be added at the beginning (default: 0)")] = 0,
+#     add_amino_acids_at_end: Annotated[int, Field(description="Number of new amino acids to be added at the end (default: use length to determine the number of amino acids to add)")] = 0,
+#     add_amino_acids_at_index: Annotated[str, Field(description="JSON string of amino acids to be added at given indices e.g. '{\"2\": 10, \"100\": 20}' adds 10 amino acids at index 2, 20 at index 100 (indexing from 1). Use empty string '{}' for no additions.")] = "{}",
+# ) -> str:
+#     with open(pdb, "r") as f:
+#         content = f.read()
+#     indices = list(set([int(i) for i in re.findall(r"ATOM\s+\d+\s+\w+\s+\w+\s+\w+\s+(\d+)\s+", content)]))
+#     if recommended_length is None:
+#         length = len(indices)
+#     else:
+#         length = recommended_length
+#     motif_indices = []
+#     motif_seq = []
+#     motif_coord = []
+#     # Parse the JSON string for amino acid additions
+#     try:
+#         add_amino_acids_dict = json.loads(add_amino_acids_at_index) if add_amino_acids_at_index else {}
+#     except json.JSONDecodeError:
+#         add_amino_acids_dict = {}
+    
+#     cur_index = add_amino_acids_at_beginning
+#     for i in indices:
+#         if str(i) in add_amino_acids_dict.keys():
+#             cur_index += add_amino_acids_dict[str(i)]
+#         if cur_index + i + add_amino_acids_at_end == length + 1:
+#             break
+#         if i not in residues_to_change:
+#             atoms = re.findall(fr"ATOM\s+\d+\s+\w+\s+\w+\s+\w+\s+{i}\s+.*", content)
+#             atoms = np.array([np.array(a.split()) for a in atoms])
+#             motif_indices.append(cur_index + i-1)
+#             motif_seq.append(three_to_one[atoms[0, 3]])
+#             motif_coord.append(np.round(np.mean(atoms[:, 6:9].astype(float), axis=0), 3).tolist())
+#     # return f"Data for enzygen:\n- Motif indices: {motif_indices}\n- Motif sequence: {motif_seq}\n- Motif coordinates: {motif_coord}\n- Recommended length: {length}"
+#     return build_enzygen_input(enzyme_family=enzyme_family, motif_indices=motif_indices, motif_seq=motif_seq, motif_coord=motif_coord, recommended_length=length)
 
 
 @mcp.tool()
@@ -306,6 +318,7 @@ def build_enzygen_input(
     recommended_length: Annotated[int, Field(description="Recommended length of the enzyme to be generated")],
     ref_pdb_chain: Annotated[str, Field(description="Reference PDB chain")] = "AAAA.A",
 ) -> str:
+    os.makedirs(ENZYGEN_PATH+"data", exist_ok=True)
     file_name = os.path.join(ENZYGEN_PATH, "data/input.json")
     data = {}
     indices = ",".join([str(i) for i in sorted(motif_indices)])+"\n"
@@ -338,6 +351,7 @@ def build_enzygen_input(
             }
         }
     }
+    
     with open(file_name, 'w') as f:
         f.write(json.dumps(data, indent=4))
     return "Created input file for Enzygen: " + file_name
@@ -384,6 +398,40 @@ def run_enzygen(input_json: Annotated[str, Field(description="Location of script
     
     # return "Predicted structure(s) from EnzyGen:\n\n----------\n" + "\n----------\n----------\n".join(output_preds) + "\n----------\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
     return f"EnzyGen Finished Successfully\nPredicted sequence from EnzyGen: {glob.glob(f"{ENZYGEN_PATH}/outputs/*/protein.txt")[0]}\nPredicted structure from EnzyGen: {glob.glob(f"{ENZYGEN_PATH}/outputs/*/pred_pdbs/*.pdb")[0]}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
+
+
+@mcp.tool()
+def run_esp_score_on_enzygen_output(
+    sequence_file: Annotated[str, Field(description="Location of enzygen sequence file (protein.txt from enzygen)")],
+    ligand_file: Annotated[str, Field(description="Location of ligand file")],
+):
+    # ESP path
+    ESP_DIR = f"{ENZYGEN_PATH}/esp_outputs/{EC_FOLDER}"
+    os.makedirs(ESP_DIR, exist_ok=True)
+    os.chdir(ESP_DIR)
+    
+    # if ligand file is in mol
+    if ligand_file.endswith(".mol"):
+        # convert ligand mol to inchi using obabel, running in docking conda env
+        obabel_cmd = f"conda run -n {DOCKING_ENV_NAME} obabel -i mol {ligand_file} -o inchi -O substrate.inchi"
+        subprocess.run(obabel_cmd, shell=True, check=True)
+        # run ESP prediction in esp conda env
+        esp_cmd = f"conda run -n {ESP_CONDA_ENV} python /ocean/projects/cis240137p/eshen3/github/ESP_prediction_function/code/ES_prediction.py {sequence_file} {ESP_DIR}/substrate.inchi"
+        result = subprocess.run(esp_cmd, shell=True, check=True, capture_output=True, text=True)
+    elif ligand_file.endswith(".inchi") or ligand_file.endswith(".smi"):
+        # run ESP prediction in esp conda env
+        esp_cmd = f"conda run -n {ESP_CONDA_ENV} python /ocean/projects/cis240137p/eshen3/github/ESP_prediction_function/code/ES_prediction.py {sequence_file} {ligand_file}"
+        result = subprocess.run(esp_cmd, shell=True, check=True, capture_output=True, text=True)
+    else:
+        raise ValueError("Ligand file must be in .mol, .inchi, or .smi format")
+
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr)
+    
+    # Parse only the last line of stdout, which contains the JSON result
+    last_line = result.stdout.strip().split('\n')[-1]
+    output = json.loads(last_line)
+    return f"ESP Scoring Completed\nESP Score: {output['Prediction']}"
 
 
 @mcp.tool()
@@ -436,25 +484,59 @@ def run_colabfold_on_enzygen_output(
     
     return f"Colabfold Job Completed\nAll output files: {protein_pdbs}\nAll plddt scores: {plddt_scores}\n\nLog File:\n\n----------\n" + logs + "\n----------\n\nError File:\n\n----------\n" + errors + "\n----------\n"
 
+@mcp.tool()
+def convert_mol_to_sdf_for_docking(
+    mol_file: Annotated[str, Field(description="Path to the input MOL file")]
+) -> str:
+    """
+    Converts a MOL file to an SDF file for docking.
+    """
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking/{EC_FOLDER}"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {mol_file} {INPUT_DIR}/ligand.mol")
+    os.chdir(INPUT_DIR)
+
+    obabel_cmd = f"conda run -n {DOCKING_ENV_NAME} python /jet/home/eshen3/Agent4Molecule/mcp_agent/util/mol_to_sdf.py --infile {INPUT_DIR}/ligand.mol --out {INPUT_DIR}/ligand_sdf.sdf"
+    p = subprocess.Popen(obabel_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    clean_cmd = f"conda run -n {DOCKING_ENV_NAME} python /jet/home/eshen3/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
+    p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    return f"Ligand sdf file generated at: {INPUT_DIR}/ligand_cleaned.sdf"
 
 @mcp.tool()
 def convert_ligand_pdb_to_sdf_for_docking(
     pdb_path: Annotated[str, Field(description="Path to the input PDB file")]
 ) -> str:
-    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking/{EC_FOLDER}"
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.system(f"cp {pdb_path} {INPUT_DIR}/ligand.pdb")
     os.chdir(INPUT_DIR)
-    
-    obabel_cmd = f"obabel {pdb_path} -O {INPUT_DIR}/ligand_sdf.sdf -h"
+
+    obabel_cmd = f"conda run -n {DOCKING_ENV_NAME} obabel {pdb_path} -O {INPUT_DIR}/ligand_sdf.sdf -h"
     p = subprocess.Popen(obabel_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
-    clean_cmd = f"{PYTHON['vina']} /jet/home/eshen3/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
+    clean_cmd = f"conda run -n {DOCKING_ENV_NAME} python /jet/home/eshen3/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
     p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
     return f"Ligand sdf file generated at: {INPUT_DIR}/ligand_cleaned.sdf"
+
+def estimate_box_from_ligand(ligand_path: str):
+    """Estimate center and cubic box size from ligand coordinates."""
+    mol = next(iter(Chem.SDMolSupplier(ligand_path, removeHs=False)), None)
+    if mol is None or not mol.GetNumAtoms():
+        raise ValueError(f"Cannot read ligand {ligand_path}")
+
+    conf = mol.GetConformer()
+    coords = [conf.GetAtomPosition(i) for i in range(mol.GetNumAtoms())]
+    xs, ys, zs = zip(*[(p.x, p.y, p.z) for p in coords])
+    cx, cy, cz = (sum(xs)/len(xs), sum(ys)/len(ys), sum(zs)/len(zs))
+    size = max(max(xs)-min(xs), max(ys)-min(ys), max(zs)-min(zs)) + 10  # Å margin
+    return cx, cy, cz, size
 
 
 @mcp.tool()
@@ -469,13 +551,32 @@ def run_docking_pipeline(
     center_z: Annotated[float, Field(description="Z coordinate of the center of the search box")] = 0.0,
     exhaustiveness: Annotated[int, Field(description="Exhaustiveness of the search (default is 8)")] = 8,
 ) -> str:
-    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking/{EC_FOLDER}"
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.chdir(INPUT_DIR)
 
+    # -------- Determine docking box automatically if not set --------
+    if all(v == 0.0 for v in [center_x, center_y, center_z]) and all(v == 80.0 for v in [size_x, size_y, size_z]):
+        cx, cy, cz, size = estimate_box_from_ligand(ligand_path)
+        size_x = size_y = size_z = size
+        center_x, center_y, center_z = cx, cy, cz
+        auto_box = True
+        print(f"Auto-determined box center: ({center_x}, {center_y}, {center_z}), size: ({size_x}, {size_y}, {size_z})")
+    else:
+        auto_box = False
+
     conda = os.environ.get("CONDA_EXE", "conda")
-    prefix = [conda, "run", "-n", "vina"]
+    prefix = [conda, "run", "-n", "docking"]
     cfg = "receptor_output.box.txt"
+
+    # Format coordinates to avoid scientific notation (which can confuse argument parsers when negative)
+    # Use format with sufficient precision but without scientific notation
+    center_x_str = f"{center_x:.6f}"
+    center_y_str = f"{center_y:.6f}"
+    center_z_str = f"{center_z:.6f}"
+    size_x_str = f"{size_x:.6f}"
+    size_y_str = f"{size_y:.6f}"
+    size_z_str = f"{size_z:.6f}"
 
     # prepare receptor
     receptor_cmd = prefix + [
@@ -484,14 +585,14 @@ def run_docking_pipeline(
         "-o", "receptor_output",
         "-p",
         "-v",
-        "--box_size", str(size_x), str(size_y), str(size_z),
-        "--box_center", str(center_x), str(center_y), str(center_z),
+        "--box_size", size_x_str, size_y_str, size_z_str,
+        "--box_center", center_x_str, center_y_str, center_z_str,
         "-a"
     ]
-    # print(" ".join(receptor_cmd))
-    p = subprocess.Popen(receptor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-    # print(output, err)
+    # Use subprocess.run instead of Popen for better handling
+    result = subprocess.run(receptor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"mk_prepare_receptor.py failed with return code {result.returncode}: {result.stderr}")
 
     # prepare ligand
     ligand_cmd = prefix + [
@@ -499,9 +600,12 @@ def run_docking_pipeline(
         "-i", ligand_path,
         "-o", "ligand_output.pdbqt",
     ]
-    # print(" ".join(ligand_cmd))
-    p = subprocess.Popen(ligand_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
+    print(f"Running: {' '.join(shlex.quote(arg) for arg in ligand_cmd)}")
+    result = subprocess.run(ligand_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    print("STDOUT:", result.stdout)
+    print("STDERR:", result.stderr)
+    if result.returncode != 0:
+        raise RuntimeError(f"mk_prepare_ligand.py failed with return code {result.returncode}: {result.stderr}")
     # print(output, err)
 
     # dock molecule
@@ -520,10 +624,30 @@ def run_docking_pipeline(
     with open("docked.pdbqt", "r") as f:
         content = f.read()
         content = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", content)
-    binding_affinity = content[0]
+    binding_affinity = float(content[0])
+    # -------- Evaluate quality --------
+    quality = (
+        "very strong" if binding_affinity <= -10 else
+        "strong" if binding_affinity <= -9 else
+        "moderate" if binding_affinity <= -6 else
+        "weak"
+    )
+
+    if binding_affinity > -6.0:
+        vina_cmd[-1] = "32"  # increase exhaustiveness
+        subprocess.run(vina_cmd, check=True)
+        with open("docked.pdbqt", "r") as f:
+            energies = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", f.read())
+            binding_affinity = float(energies[0])
+            quality = (
+                "very strong" if binding_affinity <= -10 else
+                "strong" if binding_affinity <= -9 else
+                "moderate" if binding_affinity <= -7 else
+                "weak"
+            )
 
     # return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}\n\nLogs:\n----\n{output.decode('utf-8')}\n----\nErrors:\n----\n{err.decode('utf-8')}\n----"
-    return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}"
+    return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}\nDocking score is {quality}\nDocking box is {size_x} x {size_y} x {size_z} centered at ({center_x}, {center_y}, {center_z}){' (auto-determined)' if auto_box else ''}."
 
 
 @mcp.tool()
@@ -531,7 +655,7 @@ def get_docked_protein_ligand_complex(
     receptor_pdbqt_path: Annotated[str, Field(description="Receptor pdbqt file")],
     ligand_pdbqt_path: Annotated[str, Field(description="Docked ligand pdbqt file")],
 ) -> str:
-    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+    INPUT_DIR = f"{ENZYGEN_PATH}/docking/{EC_FOLDER}"
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.system(f"cp {receptor_pdbqt_path} {INPUT_DIR}/receptor.pdbqt")
     os.system(f"cp {ligand_pdbqt_path} {INPUT_DIR}/ligand.pdbqt")
@@ -541,94 +665,120 @@ def get_docked_protein_ligand_complex(
     p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
-    command = f"obabel {INPUT_DIR}/protein_ligand_complex.pdbqt -O {INPUT_DIR}/protein_ligand_complex.pdb"
+    command = f"conda run -n {DOCKING_ENV_NAME} obabel {INPUT_DIR}/protein_ligand_complex.pdbqt -O {INPUT_DIR}/protein_ligand_complex.pdb"
     p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
         
     return f"Docked protein-ligand pdb file generated at: {INPUT_DIR}/protein_ligand_complex.pdb"
 
-@mcp.tool()
-def run_gromacs_copilot(
-    prompt: Annotated[str, Field(description="Natural language prompt to control GROMACS Copilot")],
-    ligand_pdb_path: Annotated[str, Field(description="Path to the ligand pdb file")],
-    receptor_pdb_path: Annotated[str, Field(description="Path to the receptor pdb file")],
-    api_key: Annotated[str, Field(description="API key for LLM service")] = os.getenv("GEMINI_API_KEY"),
-    model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")] = "gemini-2.0-flash",
-    api_url: Annotated[str, Field(description="URL for LLM API")] = "https://generativelanguage.googleapis.com/v1beta/chat/completions",
-    mode: Annotated[str, Field(description="Copilot mode: copilot, agent, or debug")] = "agent",
-    ) -> str:
-    """
-    Submits a SLURM job to run GROMACS Copilot and waits for completion.
-    """
+# def combine_pdbs(protein_path, ligand_path, output_path="complex.pdb"):
+#     """
+#     Combine a receptor (protein) PDB and a ligand PDB into one complex file.
 
-    INPUT_DIR = f"{ENZYGEN_PATH}/docking"
-    os.makedirs(INPUT_DIR, exist_ok=True)
-    os.system(f"cp {receptor_pdb_path} {INPUT_DIR}/receptor.pdb")
-    os.system(f"cp {ligand_pdb_path} {INPUT_DIR}/ligand.pdb")
-    os.chdir(INPUT_DIR)
+#     Args:
+#         protein_path (str): Path to receptor PDB (ATOM records, e.g., chain A).
+#         ligand_path (str): Path to ligand PDB (HETATM or ATOM records labeled LIG).
+#         output_path (str): Path to save combined PDB (default: 'complex.pdb').
+#     """
+#     with open(protein_path, "r") as f:
+#         protein_lines = [l for l in f.readlines() if l.startswith(("ATOM", "TER"))]
 
-    slurm_script = os.path.join(INPUT_DIR, "run_copilot.sh")
-    log_file = os.path.join(INPUT_DIR, "copilot_output.log")
+#     with open(ligand_path, "r") as f:
+#         ligand_lines = [l for l in f.readlines() if l.startswith(("HETATM", "ATOM", "CONECT"))]
 
-    # Build the gmx_copilot command (quote everything)
-    cmd = (
-        f"gmx_copilot "
-        f"--workspace {_shquote(INPUT_DIR)} "
-        f"--prompt {_shquote(prompt)} "
-        f"--api-key {api_key} "
-        f"--model {_shquote(model)} "
-        f"--url {_shquote(api_url)} "
-        f"--mode {_shquote(mode)}"
-    )
+#     # Avoid duplicate END or TER lines
+#     protein_lines = [l for l in protein_lines if not l.startswith("END")]
+#     ligand_lines = [l for l in ligand_lines if not l.startswith("END")]
 
-    script_text = (
-        "#!/bin/bash\n"
-        f"#SBATCH -N 1\n"
-        f"#SBATCH -p GPU-shared\n"
-        f"#SBATCH -t 24:00:00\n"
-        f"#SBATCH --gres=gpu:1\n"
-        f"#SBATCH --output={log_file}\n\n"
-        "source ~/.bashrc\n"
-        'eval "$(conda shell.bash hook)"\n'
-        f'echo "=== Activating conda env"\n'
-        f"conda activate gromacs_env\n\n"
-        "nvidia-smi\n"
-        'echo "=== Setting project path"\n'
-        f"cd /jet/home/eshen3/gromacs_copilot\n"
-        'echo "=== Running gmx_copilot"\n\n'
-        f"{cmd}\n"
-    )
+#     with open(output_path, "w") as out:
+#         out.writelines(protein_lines)
+#         out.write("TER\n")  # mark end of protein chain
+#         out.writelines(ligand_lines)
+#         out.write("END\n")
 
-    with open(slurm_script, "w") as f:
-        f.write(script_text)
-    print(f"SLURM script written to {slurm_script}")
+# @mcp.tool()
+# def run_gromacs_copilot(
+#     prompt: Annotated[str, Field(description="Natural language prompt to control GROMACS Copilot")],
+#     substrate_ligand_pdb_path: Annotated[str, Field(description="Path to the protein-ligand complex PDB file")],
+#     receptor_pdb_path: Annotated[str, Field(description="Path to the receptor PDB file")],
+#     api_key: Annotated[str, Field(description="API key for LLM service")] = os.getenv("GEMINI_API_KEY"),
+#     model: Annotated[str, Field(description="LLM model name, e.g., gpt-4o, deepseek-chat, gemini-2.0-flash")] = "gemini-2.0-flash",
+#     api_url: Annotated[str, Field(description="URL for LLM API")] = "https://generativelanguage.googleapis.com/v1beta/chat/completions",
+#     mode: Annotated[str, Field(description="Copilot mode: copilot, agent, or debug")] = "agent",
+#     ) -> str:
+#     """
+#     Submits a SLURM job to run GROMACS Copilot and waits for completion.
+#     """
 
-    p = subprocess.Popen(["sbatch", slurm_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, err = p.communicate()
+#     INPUT_DIR = f"{ENZYGEN_PATH}/docking"
+#     os.makedirs(INPUT_DIR, exist_ok=True)
+#     os.system(f"cp {substrate_ligand_pdb_path} {INPUT_DIR}/substrate_ligand.pdb")
+#     os.system(f"cp {receptor_pdb_path} {INPUT_DIR}/receptor.pdb")
+#     os.chdir(INPUT_DIR)
+#     # combine_pdbs(f"{INPUT_DIR}/receptor.pdb", f"{INPUT_DIR}/substrate_ligand.pdb", f"{INPUT_DIR}/protein.pdb")
 
-    if p.returncode != 0:
-        raise RuntimeError(f"Failed to submit SLURM job:\n{err.decode()}")
+#     slurm_script = os.path.join(INPUT_DIR, "run_copilot.sh")
+#     log_file = os.path.join(INPUT_DIR, "copilot_output.log")
 
-    output_str = output.decode("utf-8")
-    print(output_str)
-    job_id = output_str.strip().split()[-1]
+#     # Build the gmx_copilot command (quote everything)
+#     cmd = (
+#         f"gmx_copilot "
+#         f"--workspace {_shquote(INPUT_DIR)} "
+#         f"--prompt {_shquote(prompt)} "
+#         f"--api-key {api_key} "
+#         f"--model {_shquote(model)} "
+#         f"--url {_shquote(api_url)} "
+#         f"--mode {_shquote(mode)}"
+#     )
 
-    # Wait for job to complete
-    print(f"Submitted job {job_id}. Waiting for it to complete...")
-    while True:
-        q = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        qout, _ = q.communicate()
-        if job_id not in qout.decode("utf-8"):
-            break
-        print("Job still running...")
-        time.sleep(60)
+#     script_text = (
+#         "#!/bin/bash\n"
+#         f"#SBATCH -N 1\n"
+#         f"#SBATCH -p GPU-shared\n"
+#         f"#SBATCH -t 24:00:00\n"
+#         f"#SBATCH --gres=gpu:1\n"
+#         f"#SBATCH --output={log_file}\n\n"
+#         "source ~/.bashrc\n"
+#         'eval "$(conda shell.bash hook)"\n'
+#         f'echo "=== Activating conda env"\n'
+#         f"conda activate gromacs_env\n\n"
+#         "nvidia-smi\n"
+#         'echo "=== Setting project path"\n'
+#         f"cd /jet/home/eshen3/gromacs_copilot\n"
+#         'echo "=== Running gmx_copilot"\n\n'
+#         f"{cmd}\n"
+#     )
+
+#     with open(slurm_script, "w") as f:
+#         f.write(script_text)
+#     print(f"SLURM script written to {slurm_script}")
+
+#     p = subprocess.Popen(["sbatch", slurm_script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     output, err = p.communicate()
+
+#     if p.returncode != 0:
+#         raise RuntimeError(f"Failed to submit SLURM job:\n{err.decode()}")
+
+#     output_str = output.decode("utf-8")
+#     print(output_str)
+#     job_id = output_str.strip().split()[-1]
+
+#     # Wait for job to complete
+#     print(f"Submitted job {job_id}. Waiting for it to complete...")
+#     while True:
+#         q = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#         qout, _ = q.communicate()
+#         if job_id not in qout.decode("utf-8"):
+#             break
+#         print("Job still running...")
+#         time.sleep(60)
 
 
-    # Collect and return outputs
-    with open(log_file, "r") as f:
-        logs = f.read()
+#     # Collect and return outputs
+#     with open(log_file, "r") as f:
+#         logs = f.read()
 
-    return f"Job {job_id} completed.\n\nLog Output:\n{logs}\n\nErrors:\n{errors}"
+#     return f"Job {job_id} completed.\n\nLog Output:\n{logs}\n\nErrors:\n{errors}"
 
 
 def cleanup():
@@ -644,6 +794,34 @@ def cleanup():
 
 if __name__ == "__main__":
     mcp.run(transport='stdio')
+
+    # run_esp_score_on_enzygen_output(
+    #     "/ocean/projects/cis240137p/eshen3/github/EnzyGen/outputs/1.1.1/protein.txt",
+    #     "/jet/home/eshen3/Agent4Molecule/mcp_agent/inputs/1.1.1.270/substrate_ligand.mol"
+    # )
+
+    # convert_mol_to_sdf_for_docking(
+    #     mol_file="/jet/home/eshen3/Agent4Molecule/mcp_agent/inputs/1.2.1.10/substrate_ligand.mol"
+    # )
+
+    # result = run_docking_pipeline(
+    #     receptor_path="/ocean/projects/cis240137p/eshen3/github/EnzyGen/af2_outputs//out/enzygen_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb",
+    #     ligand_path="/ocean/projects/cis240137p/eshen3/github/EnzyGen/docking/1.1.1.201/ligand_cleaned.sdf"
+    # )
+    # print(result)
+
+    # get_docked_protein_ligand_complex(
+    #     receptor_pdbqt_path="/ocean/projects/cis240137p/eshen3/github/EnzyGen/docking/receptor_output.pdbqt",
+    #     ligand_pdbqt_path="/ocean/projects/cis240137p/eshen3/github/EnzyGen/docking/docked.pdbqt")
+
+    # run_gromacs_copilot(
+    #     prompt = "Run a 10ns molecular dynamics simulation on ligand substrate_ligand.pdb and receptor in receptor.pdb. Assume ligand name is UNL.",
+    #     substrate_ligand_pdb_path = "/jet/home/eshen3/Agent4Molecule/mcp_agent/inputs/substrate_ligand.pdb",
+    #     receptor_pdb_path = "/ocean/projects/cis240137p/eshen3/github/EnzyGen/docking/receptor.pdb",
+    #     api_key = os.getenv("GEMINI_API_KEY")
+    # )
+
+    # run_enzygen("/ocean/projects/cis240137p/eshen3/github/EnzyGen/data/input.json")
     
     # print(find_enzyme_category_using_keywords(["oxidase", "D-ARABINONO-1,4-LACTONE"]))
     # print(find_enzyme_category_using_keywords(["adenylate", "cyclase", "adenylylcyclase"]))
