@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from shutil import copy2
 import re
 
-from run_utils import extract_job_id, RF_DIFFUSION_CONFIG
+from run_utils import extract_job_id, RF_DIFFUSION_CONFIG, cst_template
 
 HEME_BINDER_PATH = "/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/"
 CONDAPATH = "/ocean/projects/cis240137p/dgarg2/miniconda3"
@@ -41,17 +41,146 @@ if not os.path.exists(WDIR):
     os.makedirs(WDIR, exist_ok=True)
 PARAMS_GENERATION = "/ocean/projects/cis240137p/dgarg2/github/pyrosetta/rosetta.source.release-408/main/source/scripts/python/public/molfile_to_params.py"
 combine_protein_ligand_file = "/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/combine_protein_ligand.py"
+separate_protein_ligand_file = "/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/sep_protein_ligand.py"
+
+
+@mcp.tool()
+def separate_ligand_protein_pdb(
+    pdb_file: Annotated[str, Field(description="Input pdb file (protein-ligand complex)")]
+):
+    INPUT_DIR = f"{WDIR}/start"
+    os.system(f"rm -rf {INPUT_DIR}/*")
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {pdb_file} {INPUT_DIR}/protein_ligand.pdb")
+    os.chdir(INPUT_DIR)
+
+    command = f"{PYTHON['general']} {separate_protein_ligand_file} {INPUT_DIR}/protein_ligand.pdb {INPUT_DIR}/protein.pdb {INPUT_DIR}/ligand.pdb"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    
+    command = f"obabel -ipdb ligand.pdb -osdf -O ligand.sdf"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    # clean_cmd = f"{PYTHON['vina']} /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
+    # p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # (output, err) = p.communicate()
+
+    # return f"Protein pdb file generated at: {INPUT_DIR}/protein.pdb\nLigand pdb file generated at: {INPUT_DIR}/ligand.pdb\nLigand sdf file generated at: {INPUT_DIR}/ligand.sdf"
+    return f"Protein pdb file generated at: {INPUT_DIR}/protein.pdb\nLigand sdf file generated at: {INPUT_DIR}/ligand.sdf"
+
+
+@mcp.tool()
+def convert_ligand_pdb_to_sdf(
+    ligand_pdb_file: Annotated[str, Field(description="Input pdb file (ligand)")]
+):
+    INPUT_DIR = f"{WDIR}/start"
+    os.system(f"rm -rf {INPUT_DIR}/*")
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.system(f"cp {ligand_pdb_file} {INPUT_DIR}/ligand.pdb")
+    os.chdir(INPUT_DIR)
+
+    command = f"obabel -ipdb ligand.pdb -osdf -O ligand.sdf"
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+
+    return f"Ligand sdf file generated at: {INPUT_DIR}/ligand.sdf"
+
+
+@mcp.tool()
+def generate_cst_file(
+    res1_atoms: Annotated[list[str], Field(description="Ligand atoms (like \"FE1\", \"N4\", \"C19\")")],
+    res1_residue: Annotated[str, Field(description="Ligand name (like \"HBA\")")],
+    res2_atoms: Annotated[list[str], Field(description="Protein atoms (like \"SH1\")")],
+    res2_residue: Annotated[str, Field(description="Protein residue (like \"CYS\")")],
+    distance_mean: Annotated[float, Field(description="Distance mean")] = 2.5,
+    distance_tol: Annotated[float, Field(description="Distance tolerance")] = 0.15,
+    distance_weight: Annotated[float, Field(description="Distance weight")] = 100,
+    distance_idxA: Annotated[int, Field(description="Distance index A")] = 1,
+    distance_idxB: Annotated[int, Field(description="Distance index B")] = 1,
+    angleA_mean: Annotated[float, Field(description="Angle A mean")] = 87.5,
+    angleA_tol: Annotated[float, Field(description="Angle A tolerance")] = 5,
+    angleA_weight: Annotated[float, Field(description="Angle A weight")] = 100,
+    angleA_periodicity: Annotated[int, Field(description="Angle A periodicity")] = 360,
+    angleA_idx: Annotated[int, Field(description="Angle A index")] = 1,
+    angleB_mean: Annotated[float, Field(description="Angle B mean")] = 108.9,
+    angleB_tol: Annotated[float, Field(description="Angle B tolerance")] = 5,
+    angleB_weight: Annotated[float, Field(description="Angle B weight")] = 75,
+    angleB_periodicity: Annotated[int, Field(description="Angle B periodicity")] = 360,
+    angleB_idx: Annotated[int, Field(description="Angle B index")] = 1,
+    torsA_mean: Annotated[float, Field(description="Torsion A mean")] = 87.2,
+    torsA_tol: Annotated[float, Field(description="Torsion A tolerance")] = 5,
+    torsA_weight: Annotated[float, Field(description="Torsion A weight")] = 75,
+    torsA_periodicity: Annotated[int, Field(description="Torsion A periodicity")] = 360,
+    torsA_idx: Annotated[int, Field(description="Torsion A index")] = 1,
+    torsAB_mean: Annotated[float, Field(description="Torsion AB mean")] = 86.7,
+    torsAB_tol: Annotated[float, Field(description="Torsion AB tolerance")] = 15,
+    torsAB_weight: Annotated[float, Field(description="Torsion AB weight")] = 0,
+    torsAB_periodicity: Annotated[int, Field(description="Torsion AB periodicity")] = 90,
+    torsAB_idx: Annotated[int, Field(description="Torsion AB index")] = 2,
+    torsB_mean: Annotated[float, Field(description="Torsion B mean")] = 108.5,
+    torsB_tol: Annotated[float, Field(description="Torsion B tolerance")] = 20,
+    torsB_weight: Annotated[float, Field(description="Torsion B weight")] = 25,
+    torsB_periodicity: Annotated[int, Field(description="Torsion B periodicity")] = 360,
+    torsB_idx: Annotated[int, Field(description="Torsion B index")] = 2,
+    max_dunbrack: Annotated[float, Field(description="Max Dunbrack energy")] = 5
+) -> str:
+    INPUT_DIR = f"{WDIR}/start"
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.chdir(INPUT_DIR)
+
+    with open("cst_file.cst", "w") as file:
+        file.write(cst_template.format(
+            res1_atoms=" ".join(res1_atoms),
+            res1_residue=res1_residue,
+            res2_atoms=" ".join(res2_atoms),
+            res2_residue=res2_residue,
+            distance_mean=distance_mean,
+            distance_tol=distance_tol,
+            distance_weight=distance_weight,
+            distance_idxA=distance_idxA,
+            distance_idxB=distance_idxB,
+            angleA_mean=angleA_mean,
+            angleA_tol=angleA_tol,
+            angleA_weight=angleA_weight,
+            angleA_periodicity=angleA_periodicity,
+            angleA_idx=angleA_idx,
+            angleB_mean=angleB_mean,
+            angleB_tol=angleB_tol,
+            angleB_weight=angleB_weight,
+            angleB_periodicity=angleB_periodicity,
+            angleB_idx=angleB_idx,
+            torsA_mean=torsA_mean,
+            torsA_tol=torsA_tol,
+            torsA_weight=torsA_weight,
+            torsA_periodicity=torsA_periodicity,
+            torsA_idx=torsA_idx,
+            torsAB_mean=torsAB_mean,
+            torsAB_tol=torsAB_tol,
+            torsAB_weight=torsAB_weight,
+            torsAB_periodicity=torsAB_periodicity,
+            torsAB_idx=torsAB_idx,
+            torsB_mean=torsB_mean,
+            torsB_tol=torsB_tol,
+            torsB_weight=torsB_weight,
+            torsB_periodicity=torsB_periodicity,
+            torsB_idx=torsB_idx,
+            max_dunbrack=max_dunbrack
+        ))
+    
+    return f"CST file generated at: {INPUT_DIR}/cst_file.cst"
 
 
 @mcp.tool()
 def generate_ligand_params_file(
-    sdf_file: Annotated[str, Field(description="Input sdf file (ligand)")],
+    ligand_sdf_file: Annotated[str, Field(description="Input sdf file (ligand): use separate function if not present")],
+    ligand_pdb_file: Annotated[str, Field(description="Input pdb file (ligand): use the pdb file from the user prompt")],
     ligand: Annotated[str, Field(description="Ligand name")],
 ):
     INPUT_DIR = f"{WDIR}/inputs"
-    os.system(f"rm {INPUT_DIR}/*")
+    os.system(f"rm -rf {INPUT_DIR}/*")
     os.makedirs(INPUT_DIR, exist_ok=True)
-    os.system(f"cp {sdf_file} {INPUT_DIR}/ligand.sdf")
+    os.system(f"cp {ligand_sdf_file} {INPUT_DIR}/ligand.sdf")
     os.chdir(INPUT_DIR)
 
     command = f"obabel {INPUT_DIR}/ligand.sdf -O {INPUT_DIR}/ligand_withH.sdf -h"
@@ -62,129 +191,124 @@ def generate_ligand_params_file(
     p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
-    return f"Ligand params file generated at: {glob.glob(f'{INPUT_DIR}/*.params')[-1]}\nLigand PDB file generated at: {glob.glob(f'{INPUT_DIR}/*.pdb')[-1]}"
+    os.system(f"cp {glob.glob(f'{INPUT_DIR}/*.params')[-1]} {INPUT_DIR}/{ligand}.params")
 
+    os.system(f"cp {ligand_pdb_file} {INPUT_DIR}/{ligand}.pdb")
+    os.system(f"cp {INPUT_DIR}/{ligand}.pdb {INPUT_DIR}/{ligand}_conformers.pdb")
 
-@mcp.tool()
-def convert_ligand_pdb_to_sdf_for_docking(
-    pdb_path: Annotated[str, Field(description="Path to the input PDB file")]
-) -> str:
-    INPUT_DIR = f"{WDIR}/inputs"
-    os.makedirs(INPUT_DIR, exist_ok=True)
-    os.system(f"cp {pdb_path} {INPUT_DIR}/ligand.pdb")
-    os.chdir(INPUT_DIR)
-    
-    obabel_cmd = f"obabel {pdb_path} -O {INPUT_DIR}/ligand_sdf.sdf -h"
-    p = subprocess.Popen(obabel_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-
-    clean_cmd = f"{PYTHON['vina']} /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
-    p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-
-    return f"Ligand sdf file generated at: {INPUT_DIR}/ligand_cleaned.sdf"
-
-
-@mcp.tool()
-def run_docking_pipeline(
-    receptor_path: Annotated[str, Field(description="Path to the receptor PDB file")],
-    ligand_path: Annotated[str, Field(description="Path to the ligand SDF file")],
-    size_x: Annotated[float, Field(description="Size of the search box in the X dimension")],
-    size_y: Annotated[float, Field(description="Size of the search box in the Y dimension")],
-    size_z: Annotated[float, Field(description="Size of the search box in the Z dimension")],
-    center_x: Annotated[float, Field(description="X coordinate of the center of the search box")],
-    center_y: Annotated[float, Field(description="Y coordinate of the center of the search box")],
-    center_z: Annotated[float, Field(description="Z coordinate of the center of the search box")],
-    exhaustiveness: Annotated[int, Field(description="Exhaustiveness of the search (default is 8)")] = 8,
-) -> str:
-    INPUT_DIR = f"{WDIR}/inputs"
-    os.makedirs(INPUT_DIR, exist_ok=True)
-    os.chdir(INPUT_DIR)
-
-    conda = os.environ.get("CONDA_EXE", "conda")
-    prefix = [conda, "run", "-n", "vina"]
-    cfg = "receptor_output.box.txt"
-
-    # prepare receptor
-    receptor_cmd = prefix + [
-        "mk_prepare_receptor.py",
-        "-i", receptor_path,
-        "-o", "receptor_output",
-        "-p",
-        "-v",
-        "--box_size", str(size_x), str(size_y), str(size_z),
-        "--box_center", str(center_x), str(center_y), str(center_z),
-    ]
-    print(" ".join(receptor_cmd))
-    p = subprocess.Popen(receptor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-    print(output, err)
-
-    # prepare ligand
-    ligand_cmd = ["obabel", "-isdf", ligand_path, "-opdbqt", "-O", "ligand_output.pdbqt"]
-    print(" ".join(ligand_cmd))
-    p = subprocess.Popen(ligand_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-    print(output, err)
-
-    # dock molecule
-    vina_cmd = prefix + [
-        "vina",
-        "--receptor", "receptor_output.pdbqt",
-        "--ligand", "ligand_output.pdbqt",
-        "--config", cfg,
-        "--out", "docked.pdbqt",
-        "--exhaustiveness", str(exhaustiveness),
-    ]
-    print(" ".join(vina_cmd))
-    p = subprocess.Popen(vina_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-    print(output, err)
-    with open("docked.pdbqt", "r") as f:
-        content = f.read()
-        content = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", content)
-    binding_affinity = content[0]
-
-    return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}"
-
-
-@mcp.tool()
-def docked_protein_ligand_complex(
-    receptor_pdbqt_path: Annotated[str, Field(description="Receptor pdbqt file")],
-    ligand_pdbqt_path: Annotated[str, Field(description="Docked ligand pdbqt file")],
-) -> str:
-    INPUT_DIR = f"{WDIR}/inputs"
-    os.makedirs(INPUT_DIR, exist_ok=True)
-    os.system(f"cp {receptor_pdbqt_path} {INPUT_DIR}/receptor.pdbqt")
-    os.system(f"cp {ligand_pdbqt_path} {INPUT_DIR}/ligand.pdbqt")
-    os.chdir(INPUT_DIR)
-
-    command = f"{PYTHON["diffusion"]} {combine_protein_ligand_file} -r {INPUT_DIR}/receptor.pdbqt -l {INPUT_DIR}/ligand.pdbqt -o {INPUT_DIR}/protein_ligand_complex.pdbqt"
-    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-
-    command = f"obabel {INPUT_DIR}/protein_ligand_complex.pdbqt -O {INPUT_DIR}/protein_ligand_complex.pdb"
-    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (output, err) = p.communicate()
-    
-    return f"Docked protein-ligand pdb file generated at: {INPUT_DIR}/protein_ligand_complex.pdb"
+    return f"Ligand params file generated at: {INPUT_DIR}/{ligand}.params"
 
 
 # @mcp.tool()
-# def generate_cst_file(
-#     ligand_atoms: Annotated("Ligand atoms that interact with the protein"),
-#     ligand: Annotated("Ligand name"),
-#     protein_atoms: Annotated("Protein atoms that interact with the ligand"),
-#     protein_residues: Annotated("Protein residues that interact with the ligand"),
-#     constraints
+# def convert_ligand_pdb_to_sdf_for_docking(
+#     pdb_path: Annotated[str, Field(description="Path to the input PDB file")]
 # ) -> str:
+#     INPUT_DIR = f"{WDIR}/inputs"
+#     os.makedirs(INPUT_DIR, exist_ok=True)
+#     os.system(f"cp {pdb_path} {INPUT_DIR}/ligand.pdb")
+#     os.chdir(INPUT_DIR)
+    
+#     obabel_cmd = f"obabel {pdb_path} -O {INPUT_DIR}/ligand_sdf.sdf -h"
+#     p = subprocess.Popen(obabel_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     (output, err) = p.communicate()
+
+#     clean_cmd = f"{PYTHON['vina']} /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/util/clean_fragment.py {INPUT_DIR}/ligand_sdf.sdf {INPUT_DIR}/ligand_cleaned.sdf" 
+#     p = subprocess.Popen(clean_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     (output, err) = p.communicate()
+
+#     return f"Ligand sdf file generated at: {INPUT_DIR}/ligand_cleaned.sdf"
+
+
+# @mcp.tool()
+# def run_docking_pipeline(
+#     receptor_path: Annotated[str, Field(description="Path to the receptor PDB file")],
+#     ligand_path: Annotated[str, Field(description="Path to the ligand SDF file")],
+#     size_x: Annotated[float, Field(description="Size of the search box in the X dimension")],
+#     size_y: Annotated[float, Field(description="Size of the search box in the Y dimension")],
+#     size_z: Annotated[float, Field(description="Size of the search box in the Z dimension")],
+#     center_x: Annotated[float, Field(description="X coordinate of the center of the search box")],
+#     center_y: Annotated[float, Field(description="Y coordinate of the center of the search box")],
+#     center_z: Annotated[float, Field(description="Z coordinate of the center of the search box")],
+#     exhaustiveness: Annotated[int, Field(description="Exhaustiveness of the search (default is 8)")] = 8,
+# ) -> str:
+#     INPUT_DIR = f"{WDIR}/inputs"
+#     os.makedirs(INPUT_DIR, exist_ok=True)
+#     os.chdir(INPUT_DIR)
+
+#     conda = os.environ.get("CONDA_EXE", "conda")
+#     prefix = [conda, "run", "-n", "vina"]
+#     cfg = "receptor_output.box.txt"
+
+#     # prepare receptor
+#     receptor_cmd = prefix + [
+#         "mk_prepare_receptor.py",
+#         "-i", receptor_path,
+#         "-o", "receptor_output",
+#         "-p",
+#         "-v",
+#         "--box_size", str(size_x), str(size_y), str(size_z),
+#         "--box_center", str(center_x), str(center_y), str(center_z),
+#     ]
+#     print(" ".join(receptor_cmd))
+#     p = subprocess.Popen(receptor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     (output, err) = p.communicate()
+#     print(output, err)
+
+#     # prepare ligand
+#     ligand_cmd = ["obabel", "-isdf", ligand_path, "-opdbqt", "-O", "ligand_output.pdbqt"]
+#     print(" ".join(ligand_cmd))
+#     p = subprocess.Popen(ligand_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     (output, err) = p.communicate()
+#     print(output, err)
+
+#     # dock molecule
+#     vina_cmd = prefix + [
+#         "vina",
+#         "--receptor", "receptor_output.pdbqt",
+#         "--ligand", "ligand_output.pdbqt",
+#         "--config", cfg,
+#         "--out", "docked.pdbqt",
+#         "--exhaustiveness", str(exhaustiveness),
+#     ]
+#     print(" ".join(vina_cmd))
+#     p = subprocess.Popen(vina_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     (output, err) = p.communicate()
+#     print(output, err)
+#     with open("docked.pdbqt", "r") as f:
+#         content = f.read()
+#         content = re.findall(r"REMARK VINA RESULT:\s+([-+]?\d*\.?\d+)", content)
+#     binding_affinity = content[0]
+
+#     return f"Successfully finished task. Protein pdbqt file location: {os.path.join(INPUT_DIR, "receptor_output.pdbqt")}\nDocked ligand pdbqt file location: {os.path.join(INPUT_DIR, "docked.pdbqt")}\nBinding Affinity: {binding_affinity}"
+
+
+# @mcp.tool()
+# def docked_protein_ligand_complex(
+#     receptor_pdbqt_path: Annotated[str, Field(description="Receptor pdbqt file")],
+#     ligand_pdbqt_path: Annotated[str, Field(description="Docked ligand pdbqt file")],
+# ) -> str:
+#     INPUT_DIR = f"{WDIR}/inputs"
+#     os.makedirs(INPUT_DIR, exist_ok=True)
+#     os.system(f"cp {receptor_pdbqt_path} {INPUT_DIR}/receptor.pdbqt")
+#     os.system(f"cp {ligand_pdbqt_path} {INPUT_DIR}/ligand.pdbqt")
+#     os.chdir(INPUT_DIR)
+
+#     command = f"{PYTHON["diffusion"]} {combine_protein_ligand_file} -r {INPUT_DIR}/receptor.pdbqt -l {INPUT_DIR}/ligand.pdbqt -o {INPUT_DIR}/protein_ligand_complex.pdbqt"
+#     p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     (output, err) = p.communicate()
+
+#     command = f"obabel {INPUT_DIR}/protein_ligand_complex.pdbqt -O {INPUT_DIR}/protein_ligand_complex.pdb"
+#     p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     (output, err) = p.communicate()
+    
+#     return f"Docked protein-ligand pdb file generated at: {INPUT_DIR}/protein_ligand_complex.pdb"
 
 
 @mcp.tool()
 def run_rf_diffusion(
-    input_pdb: Annotated[str, Field(description="Input PDB file")],
+    input_pdb: Annotated[str, Field(description="Input PDB file (both protein and ligand should be in this file)")],
     ligand: Annotated[str, Field(description="Ligand name")],
-    interacting_residues: Annotated[str, Field(description="Interacting residues, example if interacting residue is only A15, then A15-15, otherwise if they are A15, A16, A17, then A15-17")],
+    interacting_atoms: Annotated[list[str], Field(description="Interacting atoms (in the protein), example if interacting atom is only A15, then [\"A15-15\"], otherwise if they are A15, A16, A17, then [\"A15-17\"], or if they are A15, A16, A17, A20, A21, then [\"A15-17, A20-21\"]")],
     N_designs: Annotated[int, Field(description="Number of designs to generate")] = 5,
     T_steps: Annotated[int, Field(description="Number of diffusion steps")] = 200,
     job_time: Annotated[str, Field(description="Time limit for diffusion jobs (estimated time is 3.5 * T_steps * N_design seconds)")] = "1:00:00"
@@ -193,11 +317,17 @@ def run_rf_diffusion(
     os.makedirs(DIFFUSION_DIR, exist_ok=True)
     os.system(f"rm -rf {DIFFUSION_DIR}/*")
     os.chdir(DIFFUSION_DIR)
+
+    for interacting_atom in interacting_atoms:
+        if "-" not in interacting_atom:
+            return "Missing '-' in interacting atoms: follow the form A15-15 for A15 or A15-17 for A15 to A17 or A15-17, A20-21 for A15 to A17 and A20 to A21"
+
+    residues = f"[\"0-120,{",0-120,".join(interacting_atoms)},0-120\"]"
     config = RF_DIFFUSION_CONFIG.format(
         T_steps=T_steps,
         N_designs=N_designs,
         LIGAND=ligand,
-        residues=interacting_residues
+        residues=residues
     )
     # estimated_time = 3.5 * T_steps * N_designs
     # print(f"Estimated time to produce {N_designs} designs = {estimated_time/60:.0f} minutes")
@@ -270,7 +400,7 @@ def analyze_rf_diffusion_outputs(
     diffusion_outputs: Annotated[list[str], Field(description="List of diffusion output files")],
     ref_pdb: Annotated[str, Field(description="Reference PDB file (same as input PDB file)")],
     params: Annotated[list[str], Field(description="Rosetta params file(s) paths")],
-    ref_catres: Annotated[str, Field(description="Position of CYS in diffusion input")] = None,
+    ref_catres: Annotated[str, Field(description="Position of interacting atom in diffusion input")] = None,
     term_limit: Annotated[float, Field(description="Cutoff for how close protein termini can be to the ligand")] = 15.0,
     SASA_limit: Annotated[float, Field(description="Cutoff for ligand relative SASA")] = 0.2,
     loop_limit: Annotated[float, Field(description="Cutoff for maximum allowed loop content")] = 0.3,
@@ -682,7 +812,7 @@ def run_ligand_mpnn(
     cstfile: Annotated[str, Field(description="Path to CST file")],
     params: Annotated[list[str], Field(description="Rosetta params file(s) paths")],
     # filters: Annotated[dict, Field(description="Filtering criteria for ligand MPNN designs - minimum requirements (example: {\"all_cst\": [1.5, \"<=\"], \"L_SASA\": [0.20, \"<=\"], \"COO_hbond\": [1.0, \"=\"], \"cms_per_atom\": [5.0, \">=\"], \"corrected_ddg\": [-50.0, \"<=\"], \"nlr_totrms\": [0.8, \"<=\"], \"nlr_SR1_rms\": [0.6, \"<=\"]})")] = {},
-    align_atoms: Annotated[list[str], Field(description="Ligand atom names used for aligning the rotamers (example: ['N1', 'N2'])")] = [],
+    align_atoms: Annotated[list[str], Field(description="Ligand atom names used for aligning the rotamers (example: ['N1', 'N2'])")] = ["N1", "N2", "N3", "N4"],
     NSTRUCT: Annotated[int, Field(description="Number of ligand MPNN designs")] = 5,
     job_time: Annotated[str, Field(description="Time limit for ligand MPNN jobs")] = "6:00:00"
 ):
@@ -1016,8 +1146,21 @@ def cleanup():
 if __name__ == "__main__":
     mcp.run(transport='stdio')
 
+    # output = separate_ligand_protein_pdb(
+    #     pdb_file="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/7o2g_HBA.pdb"
+    # )
+    # print(output)
+
+    # output = generate_cst_file(
+    #     res1_atoms=["FE1", "N4", "C19"],
+    #     res1_residue="HBA",
+    #     res2_atoms=["SH1"],
+    #     res2_residue="CYS",
+    # )
+    # print(output)
+
     # output = generate_ligand_params_file(
-    #     sdf_file="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/ligand.sdf",
+    #     ligand_sdf_file="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output/start/ligand_cleaned.sdf",
     #     ligand="HBA"
     # )
     # print(output)
@@ -1058,17 +1201,19 @@ if __name__ == "__main__":
     
     # output = analyze_rf_diffusion_outputs(
     #     diffusion_outputs=glob.glob(f"{WDIR}/0_diffusion/7o2g_HBA/out/*.pdb"), 
-    #     ref_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", 
-    #     params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
-    #     term_limit=15.0,
-    #     SASA_limit=0.3,
-    #     loop_limit=0.4,
-    #     longest_helix=30,
-    #     rog=30.0,
+    #     # ref_pdb="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/input/7o2g_HBA.pdb", 
+    #     ref_pdb="/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/7o2g_HBA.pdb",
+    #     # params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
+    #     params=["/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output//inputs/HBA.params"],
+    #     # term_limit=15.0,
+    #     # SASA_limit=0.3,
+    #     # loop_limit=0.4,
+    #     # longest_helix=30,
+    #     # rog=30.0,
     #     ref_catres="A15",
-    #     exclude_clash_atoms="O1 O2 O3 O4 C5 C10",
-    #     ligand_exposed_atoms="C45 C46 C47",
-    #     exposed_atom_SASA=10.0
+    #     # exclude_clash_atoms="O1 O2 O3 O4 C5 C10",
+    #     # ligand_exposed_atoms="C45 C46 C47",
+    #     # exposed_atom_SASA=10.0
     # )
     # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_0_analyze.txt", "w") as f:
     #     f.write(output)
@@ -1105,11 +1250,14 @@ if __name__ == "__main__":
 
     # output = run_ligand_mpnn(
     #     input_pdbs=glob.glob(f"{WDIR}/2_af2/good/with_heme2/*.pdb"),
-    #     cstfile=f"{SCRIPT_DIR}/theozyme/HBA/HBA_CYS_UPO.cst",
-    #     params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
-    #     filters={},
-    #     align_atoms=["N1", "N2", "N3", "N4"]
+    #     # cstfile=f"{SCRIPT_DIR}/theozyme/HBA/HBA_CYS_UPO.cst",
+    #     cstfile="/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output//start/cst_file.cst",
+    #     # params=[f"{SCRIPT_DIR}/theozyme/HBA/HBA.params"],
+    #     params=[f"/ocean/projects/cis240137p/dgarg2/github/heme_binder_diffusion/agent_output//inputs/HBA.params"],
+    #     # filters={},
+    #     # align_atoms=["N1", "N2", "N3", "N4"]
     # )
+    # print(output)
     # with open("/ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/outputs/output_3.txt", "w") as f:
     #     f.write(output)
 
