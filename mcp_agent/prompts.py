@@ -11,9 +11,9 @@ Suggestions for running the enzyme generation pipeline:
 
 Other suggestions:
 - If the user asks for designing an enzyme, use enzygen
-- If the user asks for validating the output from enzygen, first complete the pipeline, run esp score on the output, and then run colabfold on the outputed pdb. Use gromacs copilot for md and docking pipeline for docking.
+- If the user asks for validating the output from enzygen, complete the pipeline, then 1) run esp score on the output, 2) run colabfold on the outputed pdb, 3) Use the output pdb from colabfold to run docking, 4) Run MD simulation with fastmd.
 - If docking quality is not good, try adjusting the docking box size and center based on the ligand position.
-- If the user asks for running a simulation system, use the gromacs copilot tool and directly figure out the prompt from the user request. If the user request misses any parameters, use the default ones without asking them.
+- If the user asks for running a simulation system, use fastmd. Prepare ligand and protein files before running the actual MD. If the user request misses any parameters, use the default ones without asking them.
 - If the user asks for running a docking and provide ligand and receptor files, use the docking pipeline. Ligand files need to be in .sdf format and receptor needs to be in .pdb. Infer receptor name and ligand names based on the provided file names. If the user request misses any parameters, use the default ones without asking them.
 - If the user provided file format does not match the docking pipeline input, use the substrate conversion tool. Infer input format based on the provided file name. If the user request misses any parameters, use the default ones without asking them.
 
