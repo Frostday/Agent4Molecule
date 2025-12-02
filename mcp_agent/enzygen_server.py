@@ -710,63 +710,53 @@ systems:
         f.write(yaml_config)
     print(f"FastMD config written to: {config_file}")
 
-    cmd = f"conda run -n {FASTMD_CONDA_ENV} fastmds simulate -system {config_file}"
-    print(f"Running FastMD command: {cmd}")
+    # Create SLURM submission script
+    slurm_script = f"""#!/bin/bash
+#SBATCH -N 1
+#SBATCH -p GPU-small
+#SBATCH -t {job_time}
+#SBATCH --gpus=v100-32:1
+#SBATCH --output=fastmd_output.log
+#SBATCH --error=fastmd_output.err
+source ~/.bashrc
+conda activate {FASTMD_CONDA_ENV}
+cd {MD_OUTPUT_DIR}
+fastmds simulate -system {config_file}
+"""
     
-    # Run subprocess and wait for completion
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=False)
-    
-    if result.returncode != 0:
-        return f"FastMD Simulation FAILED with return code {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-    
-    return f"FastMD Simulation Completed Successfully\nOutput simulation files are located in the {MD_OUTPUT_DIR}/simulate_output/EnzyGen directory.\n\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
+    slurm_file = os.path.join(MD_OUTPUT_DIR, "submit_fastmd.sh")
+    with open(slurm_file, "w") as f:
+        f.write(slurm_script)
+    os.system(f"chmod +x {slurm_file}")
 
-#     # Create SLURM submission script
-#     slurm_script = f"""#!/bin/bash
-# #SBATCH -N 1
-# #SBATCH -p GPU-shared
-# #SBATCH -t {job_time}
-# #SBATCH --gpus=v100-32:4
-# #SBATCH --output=fastmd_output.log
-# #SBATCH --error=fastmd_output.err
-# conda activate {FASTMD_CONDA_ENV}
-# cd {MD_OUTPUT_DIR}
-# fastmds simulate -system {config_file}
-# """
+    # Submit job
+    p = subprocess.Popen(['sbatch', slurm_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (output, err) = p.communicate()
+    job_id = extract_job_id(output.decode('utf-8'))
+    print(f"FastMD Job ID: {job_id}")
     
-#     slurm_file = os.path.join(MD_OUTPUT_DIR, "submit_fastmd.sh")
-#     with open(slurm_file, "w") as f:
-#         f.write(slurm_script)
-#     os.system(f"chmod +x {slurm_file}")
-
-#     # Submit job
-#     p = subprocess.Popen(['sbatch', slurm_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#     (output, err) = p.communicate()
-#     job_id = extract_job_id(output.decode('utf-8'))
-#     print(f"FastMD Job ID: {job_id}")
+    # Monitor job
+    while True:
+        p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (output, err) = p.communicate()
+        if job_id not in str(output):
+            break
+        print("FastMD job still running...")
+        time.sleep(60)
     
-#     # Monitor job
-#     while True:
-#         p = subprocess.Popen(['squeue', '-j', job_id], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#         (output, err) = p.communicate()
-#         if job_id not in str(output):
-#             break
-#         print("FastMD job still running...")
-#         time.sleep(60)
+    # Read output files
+    log_file = os.path.join(MD_OUTPUT_DIR, "fastmd_output.log")
+    err_file = os.path.join(MD_OUTPUT_DIR, "fastmd_output.err")
     
-#     # Read output files
-#     log_file = os.path.join(MD_OUTPUT_DIR, "fastmd_output.log")
-#     err_file = os.path.join(MD_OUTPUT_DIR, "fastmd_output.err")
+    logs = ""
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
+            logs = f.read()
     
-#     logs = ""
-#     if os.path.exists(log_file):
-#         with open(log_file, "r") as f:
-#             logs = f.read()
-    
-#     errors = ""
-#     if os.path.exists(err_file):
-#         with open(err_file, "r") as f:
-#             errors = f.read()
+    errors = ""
+    if os.path.exists(err_file):
+        with open(err_file, "r") as f:
+            errors = f.read()
     
     return f"""FastMD Simulation Completed
 Output simulation files are located in the {MD_OUTPUT_DIR}/simulate_output/EnzyGen directory.
@@ -802,8 +792,8 @@ if __name__ == "__main__":
     #     ligand_path="/jet/home/eshen3/Agent4Molecule/mcp_agent/inputs/2.4.1.135/substrate_ligand.mol"
     # )
     # run_fastmd_on_protein_ligand_complex(
-    #     cleaned_complex_path="/ocean/projects/cis240137p/eshen3/github/EnzyGen/md_outputs/2.4.1.135/complex.pdb",
-    #     ligand_path="/ocean/projects/cis240137p/eshen3/github/EnzyGen/md_outputs/2.4.1.135/ligand.sdf"
+    #     cleaned_complex_path="/ocean/projects/cis240137p/eshen3/github/FastMDSimulation/md_outputs/2.4.1.135/complex.pdb",
+    #     ligand_path="/ocean/projects/cis240137p/eshen3/github/FastMDSimulation/md_outputs/2.4.1.135/ligand.sdf"
     # )
 
     # run_esp_score_on_enzygen_output(
