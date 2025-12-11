@@ -46,7 +46,6 @@ async def ui():
     gpt_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     ChatHistory = chat_history_utils.ChatHistory(USER_DIR)
 
-    # Initialize chat_state / conv_id / output_dir
     chat_state = st.session_state.get("chat_state")
     conv_id = st.session_state.get("conv_id")
     if chat_state is None:
@@ -58,7 +57,7 @@ async def ui():
         chat_state = ChatState(USER_DIR)
         st.session_state["chat_state"] = chat_state
 
-    # Load messages if present (they are saved as structured content dicts)
+
     if "messages" not in st.session_state:
         conv_file = os.path.join(USER_DIR, st.session_state.conv_id, f"{st.session_state.conv_id}.json")
         if os.path.exists(conv_file):
@@ -69,22 +68,15 @@ async def ui():
 
     # Render saved messages in the UI
     for msg in st.session_state["messages"]:
-        # msg is expected to be a dict with 'role' and 'content' fields
-        # render_message should be able to accept role and content (adapt if needed)
-        print(msg)
         render_message(msg.get("role", "assistant"), msg.get("content"))
 
-    # Build state_messages (genai Content objects) from stored messages
-    # We will store messages in st.session_state as dicts. When constructing LLM input,
-    # we convert them back to genai.types.Content objects using from_dict().
+
     state_messages: List[genai.types.Content] = []
     for saved in st.session_state["messages"]:
         try:
-            # If saved["content"] is already a dict representing the Content object, reconstruct it.
             content_dict = saved.get("content")
             if isinstance(content_dict, dict):
-                # genai.types.Content.from_dict may or may not exist depending on SDK version.
-                # If not available, rebuild via the constructor.
+
                 try:
                     content_obj = genai.types.Content.from_dict(content_dict)
                 except Exception:
@@ -96,8 +88,7 @@ async def ui():
                             parts.append(genai.types.Part.from_text(text=part["text"]))
                         elif part.get("function_call"):
                             fc = part["function_call"]
-                            # The SDK may provide a way to construct Part from function_call directly;
-                            # otherwise include as a function_call field wrapper
+                         
                             parts.append(genai.types.Part.from_function_call(name=fc.get("name"), arguments=fc.get("arguments")))
                         elif part.get("function_response"):
                             fr = part["function_response"]
@@ -113,15 +104,14 @@ async def ui():
                                                   parts=[genai.types.Part.from_text(text=str(content_dict))])
                 state_messages.append(content_obj)
         except Exception as e:
-            # If anything goes wrong, fall back to a simple text part
+ 
             content_obj = genai.types.Content(role=saved.get("role", "assistant"),
                                               parts=[genai.types.Part.from_text(text=str(saved.get("content")))])
             state_messages.append(content_obj)
 
     # UI input
     if prompt := st.chat_input("Ask your query here", accept_file="multiple"):
-        # Construct the system + user content
-        print("prompt.text",prompt.text)
+        
         system_text = SYSTEM_MESSAGE.format(
             query=prompt.text,
             execution_history=st.session_state['chat_state'].getState(st.session_state.conv_id),
@@ -143,7 +133,6 @@ async def ui():
         with st.chat_message("user"):
             st.markdown(prompt.text)
         current_task_id = st.session_state['chat_state'].create_new_task(st.session_state.conv_id, prompt.text)
-        print("saving ", prompt.text)
        
 
         # Call agent loop
@@ -151,17 +140,13 @@ async def ui():
             response_text, messages_back = await agent_loop(st.session_state.tools, gpt_client, state_messages,
                                                             current_task_id, ChatHistory)
             st.session_state.messages = messages_back
-            # with st.chat_message("assistant"):
-            #     st.markdown(response_text)
-            #ChatHistory.save_message(st.session_state.conv_id, "assistant", response_text)
-
-
+           
 async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
                      messages: List[genai.types.Content],
                      current_task_id: str, ChatHistory) :
 
     available_tools = [tools[t]['google_syntax'] for t in tools]
-    # messages_for_llm = list(messages)  # copy
+
     messages_for_llm = []
     final_tool_result = ""
     tool_result = ""
@@ -186,34 +171,9 @@ async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
             ))
 
 
-    print("messages for llm")
-    for m in messages_for_llm: print(m)
+
     while True:
-        # converted_messages = []
 
-        # for m in messages_for_llm:
-        #     # Convert message to dict
-        #     if hasattr(m, "to_dict"):
-        #         d = m.to_dict()
-        #     elif isinstance(m, dict):
-        #         d = m
-        #     else:
-        #         d = {"role": "user", "parts": [{"text": str(m)}]}
-
-        #     # STRICT ROLE MAPPING: only "user" or "model"
-        #     role = d.get("role", "user")
-        #     if role in ["assistant", "tool"]:
-        #         role = "model"
-        #     elif role not in ["user", "model"]:
-        #         role = "user"
-
-        #     parts = d.get("parts", [])
-        #     if not parts:
-        #         parts = [{"text": ""}]
-
-        #     converted_messages.append({"role": role, "parts": parts})
-
-        # Call the LLM
         try:
             first_response = llm_client.models.generate_content(
                 model="gemini-2.0-flash",
@@ -228,9 +188,8 @@ async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
 
         candidate = first_response.candidates[0]
         assistant_content: genai.types.Content = candidate.content
-        print("first_response", first_response)
-        print("==========")
-        # Convert assistant content to serializable dict
+
+   
         try:
             assistant_dict = assistant_content.to_dict()
         except Exception:
@@ -239,19 +198,16 @@ async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
                 "content": " ".join([part.text for part in assistant_content.parts if getattr(part, "text", None)])
             }
 
-        # Append to messages_for_llm
         messages_for_llm.append(assistant_content)
         flag = True
-        # Save to session state and chat history
-        # st.session_state["messages"].append({"role": "model", "content": assistant_dict})
-        # ChatHistory.save_message(st.session_state.conv_id, "assistant", assistant_dict)
-        st.session_state["messages"].append(assistant_dict)  # ✅ Not {"role": "model", "content": assistant_dict}
+
+      
+        st.session_state["messages"].append(assistant_dict)  
         ChatHistory.save_message(st.session_state.conv_id, "assistant", assistant_dict)
         st.session_state['chat_state'].add_agent_response(st.session_state['conv_id'], current_task_id, assistant_dict)
 
         # Render UI
         with st.chat_message("assistant"):
-            print("assistant content",assistant_content)
             texts = [p.text for p in assistant_content.parts if getattr(p, "text", None)]
             if texts:
                 st.markdown("\n\n".join(texts))
@@ -259,15 +215,13 @@ async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
                 st.markdown("Processing...")
 
 
-        print("oat agent")
+
 
         for part in assistant_content.parts:
             fc = getattr(part, 'function_call', None)
-            if fc is not None:  # ✅ Proper check
+            if fc is not None:  
        
-                print('in tool loop')
-                print("==========")
-                # fc = part.function_call
+
                 tool_name = fc.name
                 tool_id = fc.id
                 try:
@@ -281,11 +235,8 @@ async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
                     ChatHistory.save_message(st.session_state.conv_id, "assistant",tool_text)
                 
                 st.session_state['chat_state'].add_tool_call(st.session_state['conv_id'], current_task_id,tool_name,tool_args,tool_id)
-                
-                print("tool name", tool_name)
-                print("tool args", tool_args)
+
                 tool_result = await tools[tool_name]["callable"](**tool_args)
-                print("tool_result",tool_result)
                 tool_result = json.loads(tool_result)
                 flag = False
 
@@ -315,15 +266,6 @@ async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
                                                             }
                 st.session_state["messages"].append(tool_response_dict) 
         
-
-            #     st.session_state["messages"].append({
-            #         "role": "model",
-            #         "content": tool_response_content.to_dict()
-            #  })
-                # st.session_state["messages"].append({
-                #     "role": "model",
-                #     "content": {"role": "model", "content": {"parts": [{"function_response": {"name": tool_name, "response": tool_result}}]}}
-                # })
                 render_message("tool", tool_result)
             
             else:
@@ -337,37 +279,6 @@ async def agent_loop(tools: Dict[str, Dict[str, Any]], llm_client: genai.Client,
     return final_tool_result, messages
         
         
-        
-            # # Record tool call
-            # st.session_state['chat_state'].add_tool_call(st.session_state['conv_id'], current_task_id, tool_name,
-            #                                              tool_args, getattr(fc, "id", None))
-            # tool_callable = tools.get(tool_name, {}).get("callable")
-
-            # if tool_callable is None:
-            #     tool_result_obj = {"error": f"No tool named {tool_name} registered."}
-            # else:
-            #     try:
-            #         maybe_coro = tool_callable(**tool_args)
-            #         tool_result_raw = await maybe_coro if hasattr(maybe_coro, "__await__") else maybe_coro
-            #         if isinstance(tool_result_raw, str):
-            #             try:
-            #                 tool_result_obj = json.loads(tool_result_raw)
-            #             except:
-            #                 tool_result_obj = {"result": tool_result_raw}
-            #         elif isinstance(tool_result_raw, dict):
-            #             tool_result_obj = tool_result_raw
-            #         else:
-            #             tool_result_obj = {"result": str(tool_result_raw)}
-            #     except Exception as e:
-            #         tool_result_obj = {"error": str(e)}
-
-            # # Save tool output
-            # st.session_state["messages"].append({
-            #     "role": "model",
-            #     "content": {"role": "model", "content": {"parts": [{"function_response": {"name": tool_name, "response": tool_result_obj}}]}}
-            # })
-            # ChatHistory.save_message(st.session_state.conv_id, "tool", tool_result_obj)
-            # render_message("tool", tool_result_obj)
 
 
 

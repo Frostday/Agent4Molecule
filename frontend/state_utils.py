@@ -8,16 +8,9 @@ class ChatState:
 
 
     def __init__(self,parent_dir): #if conv_id exists, load from file #if conv_id doesn't exist, start new one 
-        # self.conv_id = conv_id
-        # os.makedirs(STATE_DIR, exist_ok = True)
+
         self.parent_dir = parent_dir
-        # self.state_path = os.path.join(STATE_DIR, f"{self.conv_id}.json")
-        
-        # if os.path.exists(self.state_path):
-        #     self._load_state()
-        
-        # else:
-        #     self._create_new_state()
+
     
     def _getState(self,conv_id):
         state_path = os.path.join(self.parent_dir + "/" + conv_id, f"{conv_id}_agent_state.json")
@@ -69,8 +62,6 @@ class ChatState:
  
     def add_agent_response(self,conv_id,task_id,agent_response_obj):
         state = self._getState(conv_id)
-        # print(agent_response_obj)
-        # d = {"type": "agent response", "response": agent_response_obj.candidates[0].content.parts[0].text}
         d = {
     "type": "agent response",
     "response": agent_response_obj["content"]
@@ -91,19 +82,12 @@ class ChatState:
 
     def _load_state(self,state_path):
         state= {}
-        # state_path = os.path.join(self.parent_dir + "/" + conv_id, f"{conv_id}_agent_state.json")
-        # print("state_path",state_path)
+
         with open(state_path,"r") as fh:
             state = json.load(fh)
         
-
-        # print("state",state)
         return state
 
-    # def _load_state(self, state_path):
-    #     with open(state_path, "r") as fh:
-    #         state = fh.read()   # returns raw string contents
-    #     return state
 
     def _create_new_state(self,conv_id):
         state  = {

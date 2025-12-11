@@ -14,7 +14,6 @@ from chat_history_utils import ChatHistory
 from datetime import datetime
 from io import StringIO
 from message_utils import render_message
-# from visualization_panel import render_visualization_panel
 from state_utils import ChatState
 st.set_page_config(layout="wide", page_title="Chat page")
 
@@ -100,9 +99,6 @@ async def main():
             st.session_state["conv_id"] = conv_id
             st.session_state["messages"] = messages
 
-    # Render messages
-        # for msg in st.session_state["messages"]:
-        #     render_message(msg["role"], msg["content"])
 
     # Delete button
         if st.sidebar.button("🗑️ Delete this chat", type="primary"):

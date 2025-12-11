@@ -1,9 +1,6 @@
 import os, json
 from datetime import datetime
 
-# HISTORY_DIR = "chat_history"
-# INDEX_FILE = os.path.join(HISTORY_DIR, "conversations.json")
-# os.makedirs(HISTORY_DIR, exist_ok=True)
 
 class ChatHistory():
 
@@ -26,15 +23,6 @@ class ChatHistory():
 
         self.save_index(index)
         
-        
-    
-  
-
-# def load_index():
-#     if os.path.exists(INDEX_FILE):
-#         with open(INDEX_FILE, "r") as f:
-#             return json.load(f)
-#     return []
 
     def load_index(self):
         print("inside load index")
@@ -51,23 +39,6 @@ class ChatHistory():
         with open(self.index_file, "w") as f:
             json.dump(index, f, indent=2)
 
-# def save_message(conv_id, role, content):
-#     conv_file = os.path.join(self.user_dir, f"{conv_id}.json")
-#     with open(conv_file, "r") as f:
-#         messages = json.load(f)
-#     messages.append({
-#         "role": role,
-#         "content": content,
-#         "timestamp": datetime.utcnow().isoformat()
-#     })
-#     with open(conv_file, "w") as f:
-#         json.dump(messages, f, indent=2)
-#     # update index timestamp
-#     index = load_index()
-#     for conv in index:
-#         if conv["id"] == conv_id:
-#             conv["last_updated"] = datetime.utcnow().isoformat()
-#     save_index(index)
 
     def save_message(self,conv_id, role, content):
         conv_dir = self.user_dir + "/" + conv_id
