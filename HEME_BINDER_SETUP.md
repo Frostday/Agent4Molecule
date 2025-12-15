@@ -8,8 +8,8 @@ git clone https://github.com/ikalvet/heme_binder_diffusion.git
 3. Setting up Rosetta
     - Download Rosetta file: `wget https://downloads.rosettacommons.org/downloads/academic/3.15/rosetta_source_3.15_bundle.tar.bz2`
     - Unzip it
-    - Change path for PARAMS_GENERATION variable in MoleculeAgent/mcp_agent/heme_binder_server.py
-4. Next you have to change the paths at the top of MoleculeAgent/mcp_agent/heme_binder_server.py to point to the right location
+    - Change path for PARAMS_GENERATION variable in MoleculeAgent/src/mcp_agent/heme_binder_server.py
+4. Next you have to change the paths at the top of MoleculeAgent/src/mcp_agent/heme_binder_server.py to point to the right location
 5. You will also need to change slurm script creation function in this repository:
     - Inside file heme_binder_diffusion/scripts/utils/utils.py
     - Change function create_slurm_submit_script to this if you are running on PSC:
@@ -58,7 +58,7 @@ git clone https://github.com/ikalvet/heme_binder_diffusion.git
             for l in submit_txt:
                 file.write(l)
     ```
-    - You will also need to adapt the function calls inside MoleculeAgent/mcp_agent/heme_binder_server.py if you are not running on PSC.
+    - You will also need to adapt the function calls inside MoleculeAgent/src/mcp_agent/heme_binder_server.py if you are not running on PSC.
 6. Inside file heme_binder_diffusion/scripts/design/scoring/heme_scoring.py - comment out filters and align_atoms
 7. (If required) Fixing the GLIBC errors
     - Download GLIBC libraries from here - https://drive.google.com/file/d/1DvODchL0ImHnBcYfW33qRM4bhtTyIY-E/view?usp=sharing and unzip
