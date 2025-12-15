@@ -3,15 +3,15 @@
 This guide provides comprehensive setup instructions for the EnzyGen MCP Server, including all required dependencies, conda environments, and path configurations.
 
 ## Table of Contents
-1. [Prerequisites](#prerequisites)
-2. [EnzyGen Setup](#enzygen-setup)
-3. [Docking Environment (AutoDock Vina)](#docking-environment)
-4. [ESP Prediction Environment](#esp-prediction-environment)
-5. [FastMD Simulation Setup](#fastmd-simulation-setup)
-6. [ColabFold Setup](#colabfold-setup)
-7. [Path Configuration](#path-configuration)
-8. [Environment Variable Summary](#environment-variable-summary)
-9. [Testing the Setup](#testing-the-setup)
+1. [EnzyGen Setup](#1-enzygen-setup)
+2. [Docking Environment (AutoDock Vina)](#2-docking-environment-autodock-vina)
+3. [ESP Prediction Environment](#3-esp-prediction-environment)
+4. [FastMD Simulation Setup](#4-fastmd-simulation-setup)
+5. [ColabFold Setup](#5-colabfold-setup)
+6. [Path Configuration](#6-path-configuration)
+7. [Environment Variable Summary](#7-environment-variable-summary)
+8. [Testing the Setup](#8-testing-the-setup)
+9. [Additional Utility Scripts](#9-additional-utility-scripts)
 
 ---
 
@@ -61,20 +61,33 @@ which python
 ---
 
 ## 2. Docking Environment (AutoDock Vina)
+### Setup autodocking vida conda environment
 
-### Create Docking Environment
-```bash
-conda create -n docking python=3.11
-conda activate docking
+```
+$ conda create -n docking python=3.11
+$ conda activate docking
+$ conda config --env --add channels conda-forge
 ```
 
-### Install AutoDock Vina
-Follow the [official documentation](https://autodock-vina.readthedocs.io/en/latest/installation.html):
+```
+$ conda install -c conda-forge numpy swig boost-cpp libboost sphinx sphinx_rtd_theme
+$ pip install vina
+```
 
-```bash
-conda config --env --add channels conda-forge
-conda install -c conda-forge numpy swig boost-cpp libboost sphinx sphinx_rtd_theme
-pip install vina
+### Download the vina executable from github
+Github link [https://github.com/ccsb-scripps/AutoDock-Vina/releases]
+
+```
+$ wget https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v1.2.7/vina_1.2.7_linux_x86_64
+$ chmod +x vina_1.2.7_linux_x86_64
+$ mv vina_1.2.7_linux_x86_64 $CONDA_PREFIX/bin/vina
+$ which vina
+$ vina --version
+```
+
+### Download meeko
+```
+pip install -U scipy rdkit meeko gemmi prody
 ```
 
 ### Install Additional Docking Tools
@@ -84,9 +97,6 @@ conda install -c conda-forge openbabel
 
 # Install RDKit
 conda install -c conda-forge rdkit
-
-# Install meeko
-pip install -U numpy scipy rdkit vina meeko gemmi prody
 ```
 
 ### Verify Installation
@@ -245,7 +255,7 @@ apptainer exec --nv \
 
 ### Update `enzygen_server.py` Paths
 
-Edit `/path/to/Agent4Molecule/mcp_agent/enzygen_server.py` and update the following variables (lines 31-43):
+Edit `/path/to/MoleculeAgent/src/mcp_agent/enzygen_server.py` and update the following variables:
 
 ```python
 # Path to EnzyGen repository
@@ -274,7 +284,7 @@ FASTMD_CONDA_ENV = "fastmds"
 
 # Paths to other repositories
 FASTMD_PATH = "/your/path/to/FastMDSimulation"
-AGENT4MOLECULE_PATH = "/your/path/to/Agent4Molecule/"
+MOLECULE_AGENT_PATH = "/your/path/to/Agent4Molecule/"
 
 # Working directory (this can be customized per run)
 EC_FOLDER = "2.4.1.135"  # Default EC number for output organization
@@ -293,69 +303,15 @@ EC_FOLDER = "2.4.1.135"  # Default EC number for output organization
 | `esp` | ESP scoring | xgboost, pandas, numpy, rdkit |
 | `fastmds` | MD simulations | openmm, pyyaml, pdbfixer |
 
-### Path Variables to Configure
-
-```bash
-# Get your paths using these commands:
-
-# 1. EnzyGen Python
-conda activate enzygen
-which python
-
-# 2. Your home/project paths
-echo $HOME
-pwd  # when in Agent4Molecule directory
-
-# 3. Conda executable
-which conda
-
-# 4. Find installed packages
-conda env list
-```
-
 ---
 
 ## 8. Testing the Setup
 
-### Test Individual Components
-
-#### Test EnzyGen
-```bash
-conda activate enzygen
-cd /path/to/EnzyGen
-python -c "import fairseq; print('EnzyGen dependencies OK')"
-```
-
-#### Test Docking
-```bash
-conda activate docking
-vina --version
-python -c "import rdkit; from rdkit import Chem; print('Docking environment OK')"
-```
-
-#### Test ESP
-```bash
-conda activate esp
-python -c "import xgboost; import rdkit; print('ESP environment OK')"
-```
-
-#### Test FastMD
-```bash
-conda activate fastmds
-fastmds --help
-python -c "import openmm; print(f'OpenMM {openmm.version.version} OK')"
-```
-
 ### Test MCP Server
 ```bash
-cd /path/to/Agent4Molecule/mcp_agent
+cd /path/to/MoleculeAgent/src/mcp_agent
 
-# Compile check for syntax errors
-python -m py_compile enzygen_server.py
-echo "✓ Syntax check passed"
-
-# Run server with client (requires mcp-agent or main environment)
-conda activate mcp-agent  # or your main environment
+# Run server with client (requires main conda environment)
 python client.py enzygen_server.py
 ```
 
@@ -382,5 +338,6 @@ The following utility scripts should be present in `/path/to/Agent4Molecule/mcp_
 For issues with specific tools:
 - EnzyGen: [GitHub Issues](https://github.com/LeiLiLab/EnzyGen/issues)
 - AutoDock Vina: [Documentation](https://autodock-vina.readthedocs.io/)
+- ESP: [GitHub Issues](https://github.com/AlexanderKroll/ESP_prediction_function/issues)
 - FastMD: [GitHub Issues](https://github.com/aai-research-lab/FastMDSimulation/issues)
 - ColabFold: [GitHub Issues](https://github.com/sokrypton/ColabFold/issues)

@@ -39,7 +39,7 @@ DOCKING_ENV_NAME = "docking"
 EC_FOLDER = "2.4.1.135"
 ESP_CONDA_ENV = "esp"
 FASTMD_PATH = "/ocean/projects/cis240137p/eshen3/github/FastMDSimulation"
-AGENT4MOLECULE_PATH = "/jet/home/eshen3/Agent4Molecule/"
+MOLECULE_AGENT_PATH = "/jet/home/eshen3/Agent4Molecule/"
 FASTMD_CONDA_ENV = "fastmds"
 
 import sys
@@ -643,17 +643,17 @@ def prepare_protein_ligand_complex_for_md(
     (output, err) = p.communicate()
     
     # Convert ligand sdf to pdb 
-    sdf2pdb_cmd = f"conda run -n {FASTMD_CONDA_ENV} python {AGENT4MOLECULE_PATH}/mcp_agent/util/gen_ligand.py -i {MD_OUTPUT_DIR}/ligand.sdf -o {MD_OUTPUT_DIR}/ligand.pdb"
+    sdf2pdb_cmd = f"conda run -n {FASTMD_CONDA_ENV} python {MOLECULE_AGENT_PATH}/mcp_agent/util/gen_ligand.py -i {MD_OUTPUT_DIR}/ligand.sdf -o {MD_OUTPUT_DIR}/ligand.pdb"
     p = subprocess.Popen(sdf2pdb_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
     # Fix protein
-    fixpdb_cmd = f"conda run -n {FASTMD_CONDA_ENV} python {AGENT4MOLECULE_PATH}/mcp_agent/util/protein_fix.py -i {MD_OUTPUT_DIR}/protein.pdb -o {MD_OUTPUT_DIR}/protein_fixed.pdb"
+    fixpdb_cmd = f"conda run -n {FASTMD_CONDA_ENV} python {MOLECULE_AGENT_PATH}/mcp_agent/util/protein_fix.py -i {MD_OUTPUT_DIR}/protein.pdb -o {MD_OUTPUT_DIR}/protein_fixed.pdb"
     p = subprocess.Popen(fixpdb_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
 
     # Merge protein and ligand 
-    merge_cmd = f"conda run -n {FASTMD_CONDA_ENV} python {AGENT4MOLECULE_PATH}/mcp_agent/util/merge_complex.py -p {MD_OUTPUT_DIR}/protein_fixed.pdb -l {MD_OUTPUT_DIR}/ligand.pdb -o {MD_OUTPUT_DIR}/complex.pdb"
+    merge_cmd = f"conda run -n {FASTMD_CONDA_ENV} python {MOLECULE_AGENT_PATH}/mcp_agent/util/merge_complex.py -p {MD_OUTPUT_DIR}/protein_fixed.pdb -l {MD_OUTPUT_DIR}/ligand.pdb -o {MD_OUTPUT_DIR}/complex.pdb"
     p = subprocess.Popen(merge_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (output, err) = p.communicate()
     
