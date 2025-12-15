@@ -269,7 +269,7 @@ COLABFOLD_CACHE = "/your/path/to/colabfold/cf_cache"
 COLABFOLD_SIF = "/your/path/to/colabfold/colabfold_1.5.5-cuda12.2.2.sif"
 
 # Utility script path
-combine_protein_ligand_file = "/your/path/to/Agent4Molecule/mcp_agent/util/combine_protein_ligand.py"
+combine_protein_ligand_file = "/your/path/to/MoleculeAgent/mcp_agent/util/combine_protein_ligand.py"
 
 # Python environments
 PYTHON = {
@@ -284,7 +284,7 @@ FASTMD_CONDA_ENV = "fastmds"
 
 # Paths to other repositories
 FASTMD_PATH = "/your/path/to/FastMDSimulation"
-MOLECULE_AGENT_PATH = "/your/path/to/Agent4Molecule/"
+MOLECULE_AGENT_PATH = "/your/path/to/MoleculeAgent/"
 
 # Working directory (this can be customized per run)
 EC_FOLDER = "2.4.1.135"  # Default EC number for output organization
@@ -321,7 +321,7 @@ python client.py enzygen_server.py
 
 ## 9. Additional Utility Scripts
 
-The following utility scripts should be present in `/path/to/Agent4Molecule/mcp_agent/util/`:
+The following utility scripts should be present in `/path/to/MoleculeAgent/mcp_agent/util/`:
 
 - `combine_protein_ligand.py` - Combines protein and ligand PDBQT files
 - `mol_to_sdf.py` - Converts MOL files to SDF format
