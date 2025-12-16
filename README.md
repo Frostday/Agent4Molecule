@@ -30,7 +30,25 @@
      ```
      e. The UI is now accessed at http://localhost:9001/, or http://localhost:<LOCAL_PORT>/.
 
-## Run
+## Adding custom MCP servers to the UI  
+To make an MCP server work our UI setup, we recommend adding descriptions for each function and parameter. Specifically, each non-internal function (those decorated with @mcp.tool()) must return a dictionary with the following key:value pairs:
+  - "status": <string>
+      - "successful": The function successfully finished.
+      - "error": There was some error in the code execution. Use this flag when an exception is caught in a try-catch block.
+  - "answer": <string>
+      - Verbose answer of what output was produced. Include the file path and any other pertinent information. This field is ultimately displayed on the UI side.
+  - "visualize": <string>
+      - "none": No visualization expected for this function
+      - "plot": The frontend uses st.image() to render the file in the "file_path" key.
+      - "molecule" : The frontend uses molviewspec to render the file in the "file_path" key.
+      - "docking": The frontend adds a ligand to the molecular visualization.
+  - "message_render": <string>
+      - "text": Use regular st.markdown() to display the text in "answer".
+      - "table": If the "answer" key is in some columnar format, use st.table() to display the result.
+  - "file_path": <string> 
+      - A single or list of files to be visualized. Use "none" if there is nothing to visualize.
+
+For examples, refer to the existing MCP servers in mcp_agent (enzygen_server.py, heme_binder_server.py, ppdiff_server.py).
 
 
 
