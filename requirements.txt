@@ -1,0 +1,11 @@
+molviewspec==1.6.0
+streamlit==1.49.1
+mcp==1.9.2
+google-genai==1.17.0
+py3Dmol==2.5.2
+biopython==1.85
+numpy==1.26.4
+pandas==2.2.3
+pydantic==2.10.5
+matplotlib==3.10.0
+rdkit==2025.3.6
