@@ -8,6 +8,7 @@
   4. In src/mcp_agent/, modify all paths at the top of enzygen_server.py,heme_binder_server.py, and ppdiff_server.py to point to the right package locations on your system.
   5. In src/mcp_agent/utils, modify all paths in each .py file to be valid on your system.
   6. Make sure you have a valid gemini API key before running the UI.
+  7. Follow the instructions to set up the environment for enzygen and heme binder.
 
 ## Running the Frontend
   1. Modify line 121 of src/chat_interface.py with the path of the MCP server you wish to run the agent with. Currently, it is set up with enzygen_server.py.
