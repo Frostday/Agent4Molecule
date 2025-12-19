@@ -1,3 +1,7 @@
+# Example prompts
+
+These are example prompts that can be used with the MCP agent for different tasks. They can be modified as needed for specific use cases.
+
 ### Prompt for enzygen:
 
 1. Design an enzyme using the given data:\\n- EC4 category = \"4.6.1.1\"\\n- Information about the motif:\\n    - Amino acid = \"I\", Coordinates = [1.0, 1.0, 1.0], Index = 1\\n    - Amino acid = \"G\", Coordinates = [2.0, 1.8, 1.5], Index = 4\\n    - Amino acid = \"D\", Coordinates = [1.1, 1.2, 2.0], Index = 0\\n- PDB file = \"5cxl.A\"\\n- Recommended length = 20
@@ -13,7 +17,7 @@
 
 1. Design an enzyme that functions as an adenylate-processing protein, acting like a cyclase to transform ATP into 3’,5’-cyclic AMP while releasing pyrophosphate. The enzyme should resemble known adenylylcyclases in structure and activity, and be capable of catalyzing the formation of cyclic AMP as a signaling molecule. Try docking and MD to make sure the generated structure has good binding affinity to /jet/home/eshen3/Agent4Molecule/mcp_agent/inputs/substrate_ligand.pdb.
 
-<!-- 2. Design a novel adenylate cyclase enzyme molecule that catalyzes the ATP diphosphate-lyase (cyclizing) reaction, converting ATP into 3’,5’-cyclic AMP. The structure should resemble natural adenylylcyclases while maintaining efficient 3’,5’-cyclic AMP synthetase activity.
+2. Design a novel adenylate cyclase enzyme molecule that catalyzes the ATP diphosphate-lyase (cyclizing) reaction, converting ATP into 3’,5’-cyclic AMP. The structure should resemble natural adenylylcyclases while maintaining efficient 3’,5’-cyclic AMP synthetase activity.
 
 3. Construct the molecular blueprint of an adenyl cyclase protein capable of acting as a 3’,5’-cyclic AMP synthetase. The enzyme must carry out the ATP diphosphate-lyase (cyclizing) step, producing 3’,5’-cyclic AMP from ATP in a manner similar to known adenylylcyclases.
 
@@ -23,7 +27,7 @@
 
 6. Imagine a new-to-nature adenylate cyclase enzyme molecule. Describe its structural domains and active site required to catalyze the ATP diphosphate-lyase (cyclizing) reaction, producing 3’,5’-cyclic AMP as a signaling metabolite, comparable to traditional adenylylcyclase enzymes.
 
-7. Create an artificial adenylylcyclase protein molecule designed to act as a 3’,5’-cyclic AMP synthetase. This enzyme should carry out the adenyl cyclase reaction, converting ATP into 3’,5’-cyclic AMP by the ATP diphosphate-lyase (cyclizing) pathway. -->
+7. Create an artificial adenylylcyclase protein molecule designed to act as a 3’,5’-cyclic AMP synthetase. This enzyme should carry out the adenyl cyclase reaction, converting ATP into 3’,5’-cyclic AMP by the ATP diphosphate-lyase (cyclizing) pathway.
 
 ### Prompt for enzygen editing:
 
@@ -31,7 +35,7 @@
 
 2. Regenerate the full protein pdb /ocean/projects/cis240137p/dgarg2/github/Agent4Molecule/mcp_agent/inputs/enzygen_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb (belongs to the enzyme family 4.6.1.1) by modifying residues from 20-30 and from 180-190 with length 220 (add 5 amino acids at index 51, add 5 amino acids in the beginning and the rest at the end)
 
-Note: remove enzyme family when continuing the same chat
+Note: You do not need the enzyme family when continuing the same chat
 
 ### Prompt for heme binder:
 
